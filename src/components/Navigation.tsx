@@ -59,7 +59,7 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
 
             {showBookPicker && (
               <div className="absolute top-full mt-2 right-0 w-64 max-h-96 overflow-y-auto bg-white border border-[#c49a5c]/30 rounded-lg shadow-xl z-50">
-                <div className="p-2 space-y-1">
+                <div className="p-2 flex flex-col gap-1 whitespace-normal">
                   {bibleBooks.map(book => (
                     <button
                       key={book.name}
@@ -67,7 +67,7 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
                         onNavigate(book.name, getFirstSermonChapterForBook(book.name) ?? 1);
                         setShowBookPicker(false);
                       }}
-                      className={`w-full text-left px-3 py-2 rounded hover:bg-[#c49a5c]/10 transition-colors ${
+                      className={`block w-full text-left px-3 py-2 rounded hover:bg-[#c49a5c]/10 transition-colors ${
                         book.name === currentBook ? 'bg-[#c49a5c]/20 font-semibold' : ''
                       }`}
                     >
