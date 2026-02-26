@@ -20,29 +20,29 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
 
   return (
     <div className="bg-white/60 border-b border-[#c49a5c]/20 py-4 px-6 sticky top-0 backdrop-blur-sm z-40">
-      <div className="max-w-6xl mx-auto flex items-center justify-between">
+      <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Book className="text-[#c49a5c]" size={24} />
           <h1 className="text-xl font-serif text-[#2c1810]">Faith Notebook</h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap max-w-[68vw] sm:max-w-none sm:overflow-visible">
           <button
             onClick={onOpenSermons}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 text-[#2c1810] rounded-lg hover:bg-[#c49a5c]/10 transition-colors"
+            className="flex flex-shrink-0 items-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 text-[#2c1810] rounded-lg hover:bg-[#c49a5c]/10 transition-colors"
           >
             <span className="font-medium">Sermons</span>
           </button>
 
           <button
             onClick={onOpenAIChat}
-            className="flex items-center gap-2 px-4 py-2 bg-[#c49a5c] text-white rounded-lg hover:bg-[#b38a4d] transition-colors"
+            className="flex flex-shrink-0 items-center gap-2 px-4 py-2 bg-[#c49a5c] text-white rounded-lg hover:bg-[#b38a4d] transition-colors"
           >
             <MessageCircle size={20} />
             <span className="font-medium">AI Chat</span>
           </button>
 
-          <div className="relative">
+          <div className="relative flex-shrink-0">
             <button
               onClick={() => setShowBookPicker(!showBookPicker)}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
@@ -78,7 +78,7 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
             )}
           </div>
 
-          <div className="relative">
+          <div className="relative flex-shrink-0">
             <button
               onClick={() => setShowChapterPicker(!showChapterPicker)}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
