@@ -22,6 +22,13 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          systemInstruction: {
+            parts: [
+              {
+                text: 'No greetings/preamble; answer directly with bullet points.',
+              },
+            ],
+          },
           contents: [
             {
               parts: [
@@ -32,14 +39,14 @@ ${fullContext || ''}
 
 User question: ${userMessage}
 
-Provide a thoughtful, biblically-grounded response. When relevant, reference specific sermons by title and speaker, or mention insights from community notes. Be conversational and helpful.`,
+Provide a thoughtful, biblically-grounded response. When relevant, reference specific sermons by title and speaker, or mention insights from community notes. Use concise bullet points and no greeting.`,
                 },
               ],
             },
           ],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 512,
+            maxOutputTokens: 1024,
           },
         }),
       }
