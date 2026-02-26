@@ -22,7 +22,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          systemInstruction: {
+          system_instruction: {
             parts: [
               {
                 text: 'No greetings/preamble; answer directly with bullet points.',
@@ -32,6 +32,9 @@ export default async function handler(req, res) {
           contents: [
             {
               parts: [
+                {
+                  text: 'System rule: No greetings/preamble; answer directly with bullet points.',
+                },
                 {
                   text: `You are a helpful Bible study assistant with access to sermons and community notes.
 
