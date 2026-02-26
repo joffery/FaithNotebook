@@ -72,19 +72,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  // username is used on the client; we map it to a local email for Supabase auth
+  const toEmail = (username: string) => `${username}@faith.local`;
+
+  const signIn = async (username: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: toEmail(username),
       password,
     });
     return { error };
   };
 
-  const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
+  const signUp = async (username: string, password: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email: toEmail(username),
       password,
     });
+
+    // if sign up succeeded (user created), ensure profile has display_name
+    if (!error && data?.user) {
+      try {
+        await supabase.from('profiles').upsert({ id: data.user.id, display_name: username });
+      } catch (e) {
+        console.warn('Failed to create profile display_name:', e);
+      }
+    }
+
     return { error };
   };
 

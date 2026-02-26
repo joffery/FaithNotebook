@@ -3,11 +3,27 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+let supabaseClient;
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+  console.warn('Supabase env vars missing; functionality will be limited.');
+  // create a minimal stub that throws on usage to avoid crashing the app
+  supabaseClient = {
+    from: () => ({ select: async () => ({ data: null, error: new Error('Supabase not configured') }) }),
+    auth: {
+      signInWithPassword: async () => ({ error: new Error('Supabase not configured') }),
+      signUp: async () => ({ error: new Error('Supabase not configured') }),
+      signOut: async () => {},
+      getSession: async () => ({ data: { session: null } }),
+      onAuthStateChange: () => ({ subscription: { unsubscribe: () => {} } }),
+    },
+    rpc: async () => ({ error: new Error('Supabase not configured') }),
+  } as any;
+} else {
+  supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = supabaseClient;
+export const isSupabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
 
 export type Database = {
   public: {

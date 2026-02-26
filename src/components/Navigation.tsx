@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { Book, ChevronDown, MessageCircle } from 'lucide-react';
 import { bibleBooks } from '../data/bibleBooks';
+import { hasSermonInBook, hasSermonInChapter, getFirstSermonChapterForBook } from '../data/sermonIndex';
 
 type NavigationProps = {
   currentBook: string;
   currentChapter: number;
   onNavigate: (book: string, chapter: number) => void;
   onOpenAIChat: () => void;
+  onOpenSermons: () => void;
 };
 
-export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAIChat }: NavigationProps) {
+export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAIChat, onOpenSermons }: NavigationProps) {
   const [showBookPicker, setShowBookPicker] = useState(false);
   const [showChapterPicker, setShowChapterPicker] = useState(false);
 
@@ -25,6 +27,13 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={onOpenSermons}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 text-[#2c1810] rounded-lg hover:bg-[#c49a5c]/10 transition-colors"
+          >
+            <span className="font-medium">Sermons</span>
+          </button>
+
           <button
             onClick={onOpenAIChat}
             className="flex items-center gap-2 px-4 py-2 bg-[#c49a5c] text-white rounded-lg hover:bg-[#b38a4d] transition-colors"
@@ -49,14 +58,19 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
                     <button
                       key={book.name}
                       onClick={() => {
-                        onNavigate(book.name, 1);
+                        onNavigate(book.name, getFirstSermonChapterForBook(book.name) ?? 1);
                         setShowBookPicker(false);
                       }}
                       className={`w-full text-left px-3 py-2 rounded hover:bg-[#c49a5c]/10 transition-colors ${
                         book.name === currentBook ? 'bg-[#c49a5c]/20 font-semibold' : ''
                       }`}
                     >
-                      {book.name}
+                      <span className="flex items-center justify-between">
+                        <span>{book.name}</span>
+                        {hasSermonInBook(book.name) && (
+                          <span className="w-2 h-2 rounded-full bg-[#c49a5c]" />
+                        )}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -87,7 +101,12 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
                         ch === currentChapter ? 'bg-[#c49a5c]/20 font-semibold' : ''
                       }`}
                     >
-                      {ch}
+                      <span className="inline-flex items-center gap-1">
+                        <span>{ch}</span>
+                        {hasSermonInChapter(currentBook, ch) && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#c49a5c]" />
+                        )}
+                      </span>
                     </button>
                   ))}
                 </div>

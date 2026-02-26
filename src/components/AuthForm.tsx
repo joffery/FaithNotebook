@@ -4,25 +4,46 @@ import { useAuth } from '../context/AuthContext';
 
 export function AuthForm() {
   const { signIn, signUp } = useAuth();
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Single username/password form: if username exists we attempt sign in; if not, we sign up + sign in
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const { error: authError } = isSignUp
-      ? await signUp(email, password)
-      : await signIn(email, password);
+    try {
+      // Try signing in first
+      const { error: signInError } = await signIn(username, password);
+      if (!signInError) {
+        // signed in
+        setLoading(false);
+        return;
+      }
 
-    if (authError) {
-      setError(authError.message);
+      // If sign-in failed, attempt to sign up (this covers new usernames)
+      const { error: signUpError } = await signUp(username, password);
+
+      if (signUpError) {
+        // likely wrong password for existing user or other problem
+        setError(signUpError.message || 'Authentication failed');
+        setLoading(false);
+        return;
+      }
+
+      // After sign up, try sign in to establish session
+      const { error: finalSignInError } = await signIn(username, password);
+      if (finalSignInError) {
+        setError(finalSignInError.message || 'Sign in after sign up failed');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'An error occurred');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -39,42 +60,20 @@ export function AuthForm() {
         </div>
 
         <div className="bg-white/60 border border-[#c49a5c]/20 rounded-lg p-8 shadow-lg">
-          <div className="flex gap-2 mb-6">
-            <button
-              onClick={() => setIsSignUp(false)}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                !isSignUp
-                  ? 'bg-[#c49a5c] text-white'
-                  : 'bg-transparent text-[#2c1810]/60 hover:text-[#2c1810]'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => setIsSignUp(true)}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                isSignUp
-                  ? 'bg-[#c49a5c] text-white'
-                  : 'bg-transparent text-[#2c1810]/60 hover:text-[#2c1810]'
-              }`}
-            >
-              Sign Up
-            </button>
-          </div>
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-[#2c1810] mb-2">
-                Email
+              <label htmlFor="username" className="block text-sm font-medium text-[#2c1810] mb-2">
+                Username
               </label>
               <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
+                minLength={3}
                 className="w-full px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
-                placeholder="your@email.com"
+                placeholder="Choose a username"
               />
             </div>
 
@@ -92,11 +91,7 @@ export function AuthForm() {
                 className="w-full px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
                 placeholder="••••••••"
               />
-              {isSignUp && (
-                <p className="text-xs text-[#2c1810]/60 mt-1">
-                  Must be at least 6 characters
-                </p>
-              )}
+              <p className="text-xs text-[#2c1810]/60 mt-1">At least 6 characters</p>
             </div>
 
             {error && (
@@ -113,19 +108,17 @@ export function AuthForm() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  {isSignUp ? 'Creating account...' : 'Signing in...'}
+                  Signing in...
                 </span>
               ) : (
-                <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
+                <span>Continue</span>
               )}
             </button>
           </form>
 
-          {isSignUp && (
-            <p className="text-xs text-center text-[#2c1810]/60 mt-4">
-              By creating an account, you agree to keep your faith journey private and secure.
-            </p>
-          )}
+          <p className="text-xs text-center text-[#2c1810]/60 mt-4">
+            If the username is new, an account will be created automatically. No email required.
+          </p>
         </div>
       </div>
     </div>

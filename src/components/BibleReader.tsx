@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { getBibleChapter, BibleChapter } from '../data/bibleText';
+import { getBibleChapter, ensureBibleChapter, BibleChapter } from '../data/bibleText';
 import { VersePanel } from './VersePanel';
-import sermons from '../data/sermons_processed.json';
-import { parseVerseReference } from '../utils/verseParser';
+import { getInsightVersesForChapter, hasSermonInChapter } from '../data/sermonIndex';
 
 type BibleReaderProps = {
   book: string;
@@ -11,33 +10,45 @@ type BibleReaderProps = {
 
 export function BibleReader({ book, chapter }: BibleReaderProps) {
   const [chapterData, setChapterData] = useState<BibleChapter | null>(null);
+  const [loadingChapter, setLoadingChapter] = useState<boolean>(false);
   const [selectedVerse, setSelectedVerse] = useState<number | null>(null);
   const [versesWithInsights, setVersesWithInsights] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    const data = getBibleChapter(book, chapter);
-    setChapterData(data);
+    let mounted = true;
+    setSelectedVerse(null);
+    setVersesWithInsights(getInsightVersesForChapter(book, chapter));
 
-    const insightVerses = new Set<number>();
-    sermons.forEach((sermon: any) => {
-      sermon.verse_insights.forEach((vi: any) => {
-        const parsedVerses = parseVerseReference(vi.verse);
-        parsedVerses.forEach(parsed => {
-          if (parsed.book === book && parsed.chapter === chapter) {
-            insightVerses.add(parsed.verse);
-          }
-        });
-      });
-    });
-    setVersesWithInsights(insightVerses);
+    async function loadChapter() {
+      setLoadingChapter(true);
+      if (mounted) setChapterData(null);
+      const sermonChapter = hasSermonInChapter(book, chapter);
+
+      // try cache first, then fetch if missing
+      let data = getBibleChapter(book, chapter);
+      if (!data || sermonChapter) {
+        const fetched = await ensureBibleChapter(book, chapter, sermonChapter);
+        data = fetched || data;
+      }
+      if (mounted) setChapterData(data);
+
+      if (mounted) setLoadingChapter(false);
+    }
+
+    loadChapter();
+    return () => { mounted = false; };
   }, [book, chapter]);
 
   if (!chapterData) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-[#2c1810]/60 font-serif">
-          Chapter not available yet. Please select Matthew 6 to see sample content.
-        </p>
+        {loadingChapter ? (
+          <p className="text-[#2c1810]/60 font-serif">Loading chapter...</p>
+        ) : (
+          <p className="text-[#2c1810]/60 font-serif">
+            Verse text not available for this chapter.
+          </p>
+        )}
       </div>
     );
   }
