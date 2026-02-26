@@ -26,7 +26,13 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
           <h1 className="text-xl font-serif text-[#2c1810]">Faith Notebook</h1>
         </div>
 
-        <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap max-w-[68vw] sm:max-w-none sm:overflow-visible">
+        <div
+          className={`flex items-center gap-3 whitespace-nowrap sm:max-w-none sm:overflow-visible ${
+            showBookPicker || showChapterPicker
+              ? 'overflow-visible max-w-none'
+              : 'overflow-x-auto max-w-[68vw]'
+          }`}
+        >
           <button
             onClick={onOpenSermons}
             className="flex flex-shrink-0 items-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 text-[#2c1810] rounded-lg hover:bg-[#c49a5c]/10 transition-colors"
