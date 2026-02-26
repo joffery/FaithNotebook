@@ -13,9 +13,17 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'userMessage is required' });
   }
 
-  try {
+  const responseInstruction = [
+    'No greetings or preamble.',
+    'Output exactly 6 bullet points.',
+    'Each bullet must be 18 words or fewer.',
+    'Each bullet must be a complete sentence.',
+    'After bullets, output exactly 1 summary sentence.',
+  ].join(' ');
+
+  const callGemini = async (modelName) => {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: {
@@ -25,7 +33,7 @@ export default async function handler(req, res) {
           system_instruction: {
             parts: [
               {
-                text: 'No greetings/preamble. Output format must be exactly 6 bullet points followed by exactly 1 sentence summary.',
+                text: responseInstruction,
               },
             ],
           },
@@ -33,7 +41,7 @@ export default async function handler(req, res) {
             {
               parts: [
                 {
-                  text: 'System rule: No greetings/preamble. Output exactly 6 bullet points and then 1 sentence summary.',
+                  text: `System rule: ${responseInstruction}`,
                 },
                 {
                   text: `You are a helpful Bible study assistant with access to sermons and community notes.
@@ -42,20 +50,36 @@ ${fullContext || ''}
 
 User question: ${userMessage}
 
-Provide a thoughtful, biblically-grounded response. When relevant, reference specific sermons by title and speaker, or mention insights from community notes. Follow the output format strictly: exactly 6 bullet points, then exactly 1 sentence summary.`,
+Provide a thoughtful, biblically-grounded response. When relevant, reference specific sermons by title and speaker, or mention insights from community notes. Follow the output format strictly.`,
                 },
               ],
             },
           ],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 1024,
+            maxOutputTokens: 2048,
           },
         }),
       }
     );
 
     const data = await response.json();
+    return { response, data };
+  };
+
+  try {
+    let modelUsed = 'gemini-2.5-flash';
+    let { response, data } = await callGemini(modelUsed);
+
+    if (response.ok && data?.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      modelUsed = 'gemini-2.0-flash';
+      ({ response, data } = await callGemini(modelUsed));
+
+      if (!response.ok || !data?.candidates?.length) {
+        modelUsed = 'gemini-1.5-flash';
+        ({ response, data } = await callGemini(modelUsed));
+      }
+    }
 
     if (!response.ok) {
       return res.status(response.status).json({
@@ -77,6 +101,7 @@ Provide a thoughtful, biblically-grounded response. When relevant, reference spe
       finishReason,
       usageMetadata,
       contextCharCount: (fullContext || '').length,
+      modelUsed,
     });
   } catch (error) {
     console.error('Server error calling Gemini:', error);
