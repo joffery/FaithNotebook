@@ -25,7 +25,7 @@ export default async function handler(req, res) {
           system_instruction: {
             parts: [
               {
-                text: 'No greetings/preamble; answer directly with bullet points.',
+                text: 'No greetings/preamble. Output format must be exactly 6 bullet points followed by exactly 1 sentence summary.',
               },
             ],
           },
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
             {
               parts: [
                 {
-                  text: 'System rule: No greetings/preamble; answer directly with bullet points.',
+                  text: 'System rule: No greetings/preamble. Output exactly 6 bullet points and then 1 sentence summary.',
                 },
                 {
                   text: `You are a helpful Bible study assistant with access to sermons and community notes.
@@ -42,7 +42,7 @@ ${fullContext || ''}
 
 User question: ${userMessage}
 
-Provide a thoughtful, biblically-grounded response. When relevant, reference specific sermons by title and speaker, or mention insights from community notes. Use concise bullet points and no greeting.`,
+Provide a thoughtful, biblically-grounded response. When relevant, reference specific sermons by title and speaker, or mention insights from community notes. Follow the output format strictly: exactly 6 bullet points, then exactly 1 sentence summary.`,
                 },
               ],
             },
@@ -76,6 +76,7 @@ Provide a thoughtful, biblically-grounded response. When relevant, reference spe
       aiResponse,
       finishReason,
       usageMetadata,
+      contextCharCount: (fullContext || '').length,
     });
   } catch (error) {
     console.error('Server error calling Gemini:', error);

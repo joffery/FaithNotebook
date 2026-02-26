@@ -19,6 +19,38 @@ type Message = {
   content: string;
 };
 
+const MAX_SERMONS_IN_CONTEXT = 8;
+const MAX_NOTES_IN_CONTEXT = 10;
+const CONTEXT_CHAR_BUDGET = 12000;
+
+function tokenizeQuery(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s:]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 3);
+}
+
+function scoreByQuery(text: string, terms: string[]): number {
+  if (!text) return 0;
+  const lower = text.toLowerCase();
+  let score = 0;
+  for (const term of terms) {
+    if (lower.includes(term)) score += 1;
+  }
+  return score;
+}
+
+function trimToSentence(text: string, maxChars: number): string {
+  const normalized = (text || '').replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxChars) return normalized;
+
+  const sliced = normalized.slice(0, maxChars);
+  const lastStop = Math.max(sliced.lastIndexOf('. '), sliced.lastIndexOf('! '), sliced.lastIndexOf('? '));
+  if (lastStop > 40) return sliced.slice(0, lastStop + 1).trim();
+  return `${sliced.trim()}...`;
+}
+
 export function AIChatTab({ onClose, initialView = 'chat' }: AIChatTabProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -116,33 +148,70 @@ export function AIChatTab({ onClose, initialView = 'chat' }: AIChatTabProps) {
     setLoading(true);
 
     try {
-      const sermonsContext = allSermons.length > 0
-        ? `Available Sermons:\n${allSermons
-            .map((s: any) => `"${s.title}" by ${s.speaker} (${s.church}) - ${s.book_reference}\nSummary: ${s.summary}\nKey Tags: ${s.tags.slice(0, 5).join(', ')}`)
+      const terms = tokenizeQuery(userMessage);
+
+      const rankedSermons = [...allSermons]
+        .map((sermon: any) => {
+          const title = sermon.title || '';
+          const summary = sermon.summary || '';
+          const tags = Array.isArray(sermon.tags) ? sermon.tags.join(' ') : '';
+          const reference = sermon.book_reference || '';
+          const score =
+            scoreByQuery(title, terms) * 4 +
+            scoreByQuery(tags, terms) * 3 +
+            scoreByQuery(reference, terms) * 2 +
+            scoreByQuery(summary, terms);
+
+          return { sermon, score };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, MAX_SERMONS_IN_CONTEXT)
+        .map((item) => item.sermon);
+
+      const sermonsContext = rankedSermons.length > 0
+        ? `Relevant Sermons (Top ${rankedSermons.length}):\n${rankedSermons
+            .map((s: any, idx: number) => {
+              const summary = trimToSentence(s.summary || '', 220);
+              const tagLine = Array.isArray(s.tags) ? s.tags.slice(0, 5).join(', ') : '';
+              return `${idx + 1}. "${s.title}" by ${s.speaker} (${s.church})\n   Ref: ${s.book_reference || 'N/A'}\n   Summary: ${summary}\n   Tags: ${tagLine || 'N/A'}`;
+            })
             .join('\n\n')}`
         : '';
 
-      // combine community notes and (if available) the signed-in user's personal notes
-      let notesContext = '';
-      if (allNotes.length > 0) {
-        notesContext += `Community Notes:\n${allNotes
-          .map((n: any) => `${n.book} ${n.chapter}:${n.verse} - ${n.content} (${n.likes_count} likes)`)
-          .join('\n')}`;
-      }
-      if (userNotes.length > 0) {
-        if (notesContext) notesContext += '\n\n';
-        notesContext += `My Notes:\n${userNotes
-          .map((n: any) => `${n.book} ${n.chapter}:${n.verse} - ${n.content}`)
-          .join('\n')}`;
-      }
+      const combinedNotes = [
+        ...userNotes.map((note: any) => ({ ...note, noteScope: 'My Note' })),
+        ...allNotes.map((note: any) => ({ ...note, noteScope: 'Community Note' })),
+      ];
 
-      const insightsContext = allInsights.length > 0
-        ? `Verse Insights from Sermons:\n${allInsights
-            .map((i: any) => `${i.verse} - From "${i.sermons?.title}" by ${i.sermons?.speaker}: ${i.insight}`)
-            .join('\n')}`
+      const rankedNotes = combinedNotes
+        .map((note: any) => {
+          const loc = `${note.book || ''} ${note.chapter || ''}:${note.verse || ''}`;
+          const body = `${loc} ${note.content || ''}`;
+          const score =
+            scoreByQuery(loc, terms) * 3 +
+            scoreByQuery(note.content || '', terms) +
+            (note.noteScope === 'My Note' ? 1 : 0);
+
+          return { note, score };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, MAX_NOTES_IN_CONTEXT)
+        .map((item) => item.note);
+
+      const notesContext = rankedNotes.length > 0
+        ? `Relevant Notes (Top ${rankedNotes.length}):\n${rankedNotes
+            .map((n: any, idx: number) => {
+              const content = trimToSentence(n.content || '', 180);
+              const likes = typeof n.likes_count === 'number' ? ` | likes=${n.likes_count}` : '';
+              return `${idx + 1}. [${n.noteScope}] ${n.book} ${n.chapter}:${n.verse}${likes}\n   ${content}`;
+            })
+            .join('\n\n')}`
         : '';
 
-      const fullContext = [sermonsContext, notesContext, insightsContext].filter(c => c).join('\n\n---\n\n');
+      let fullContext = [sermonsContext, notesContext].filter(Boolean).join('\n\n---\n\n');
+      if (fullContext.length > CONTEXT_CHAR_BUDGET) {
+        fullContext = `${fullContext.slice(0, CONTEXT_CHAR_BUDGET)}\n\n[Context trimmed due to size budget]`;
+      }
 
       const response = await fetch('/api/gemini-chat', {
         method: 'POST',
@@ -162,6 +231,11 @@ export function AIChatTab({ onClose, initialView = 'chat' }: AIChatTabProps) {
       }
 
       const data = await response.json();
+      console.log('AI debug', {
+        finishReason: data?.finishReason,
+        usageMetadata: data?.usageMetadata,
+        contextCharCount: data?.contextCharCount,
+      });
       let aiResponse = data?.aiResponse || 'Sorry, I could not generate a response.';
 
       if (data?.finishReason === 'MAX_TOKENS') {
