@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Send, Loader2, X } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { parseVerseReference } from '../utils/verseParser';
 import { VersePanel } from './VersePanel';
@@ -235,7 +237,15 @@ export function AIChatTab({ onClose, initialView = 'chat' }: AIChatTabProps) {
                         : 'bg-white/60 text-[#2c1810] border border-[#c49a5c]/20'
                     }`}
                   >
-                    <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    {message.role === 'assistant' ? (
+                      <div className="leading-relaxed prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-strong:text-[#2c1810] prose-headings:text-[#2c1810]">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    )}
                   </div>
                 </div>
               ))

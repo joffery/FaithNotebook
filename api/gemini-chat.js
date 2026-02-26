@@ -39,7 +39,7 @@ Provide a thoughtful, biblically-grounded response. When relevant, reference spe
           ],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 1024,
+            maxOutputTokens: 512,
           },
         }),
       }
@@ -53,14 +53,19 @@ Provide a thoughtful, biblically-grounded response. When relevant, reference spe
       });
     }
 
-    const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
+    const candidate = data?.candidates?.[0] || null;
+    const parts = candidate?.content?.parts || [];
+    const aiResponse = parts
+      .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+      .join('')
+      .trim() || 'Sorry, I could not generate a response.';
     const finishReason = data?.candidates?.[0]?.finishReason || null;
-    const usage = data?.usageMetadata || null;
+    const usageMetadata = data?.usageMetadata || null;
 
     return res.status(200).json({
       aiResponse,
       finishReason,
-      usage,
+      usageMetadata,
     });
   } catch (error) {
     console.error('Server error calling Gemini:', error);
