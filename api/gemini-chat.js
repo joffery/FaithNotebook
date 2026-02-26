@@ -38,8 +38,8 @@ Provide a thoughtful, biblically-grounded response. When relevant, reference spe
             },
           ],
           generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 1000,
+            temperature: 0.3,
+            maxOutputTokens: 1024,
           },
         }),
       }
@@ -54,7 +54,14 @@ Provide a thoughtful, biblically-grounded response. When relevant, reference spe
     }
 
     const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
-    return res.status(200).json({ aiResponse });
+    const finishReason = data?.candidates?.[0]?.finishReason || null;
+    const usage = data?.usageMetadata || null;
+
+    return res.status(200).json({
+      aiResponse,
+      finishReason,
+      usage,
+    });
   } catch (error) {
     console.error('Server error calling Gemini:', error);
     return res.status(500).json({ error: 'AI request failed on server' });

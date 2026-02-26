@@ -160,7 +160,11 @@ export function AIChatTab({ onClose, initialView = 'chat' }: AIChatTabProps) {
       }
 
       const data = await response.json();
-      const aiResponse = data?.aiResponse || 'Sorry, I could not generate a response.';
+      let aiResponse = data?.aiResponse || 'Sorry, I could not generate a response.';
+
+      if (data?.finishReason === 'MAX_TOKENS') {
+        aiResponse += '\n\n[Response truncated due to token limit. Please ask a narrower follow-up if needed.]';
+      }
 
       setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
     } catch (error) {
