@@ -100,7 +100,7 @@ export function MyNotesPanel({ onClose, onOpenNote }: MyNotesPanelProps) {
           <div>
             <h2 className="text-xl font-serif text-[#2c1810]">My Notes</h2>
             <p className="text-sm text-[#2c1810]/60 mt-1">
-              Reopen a verse where you already wrote something.
+              Reopen the Scriptures where you already wrote your own reflections.
             </p>
           </div>
           <button
@@ -129,7 +129,7 @@ export function MyNotesPanel({ onClose, onOpenNote }: MyNotesPanelProps) {
               </div>
               <p className="text-[#2c1810] font-medium">No notes yet</p>
               <p className="mt-2 text-sm text-[#2c1810]/60">
-                Tap any verse while reading and start writing. Your notes will show up here.
+                Tap any verse while reading and write what you learned, what stood out, or what you want to live out. Your notes will show up here.
               </p>
             </div>
           ) : (

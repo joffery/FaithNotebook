@@ -288,7 +288,7 @@ export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettings
             <div>
               <h3 className="text-lg font-serif text-[#2c1810]">My Notes</h3>
               <p className="text-sm text-[#2c1810]/60 mt-1">
-                Reopen the verses where you already wrote notes.
+                Reopen the Scriptures where you wrote your own reflections and see which notes you already shared.
               </p>
             </div>
             <button
@@ -297,7 +297,7 @@ export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettings
               className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-[#c49a5c]/25 bg-white px-4 py-3 text-sm font-medium text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
             >
               <NotebookPen size={16} />
-              <span>Open My Notes</span>
+              <span>Open Scripture Notes</span>
             </button>
           </div>
 

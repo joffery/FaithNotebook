@@ -80,6 +80,12 @@ const isMissingProfileFieldError = (error: unknown) => {
   return message.includes('username') || message.includes('avatar_url');
 };
 
+const isUniqueConstraintError = (error: unknown) => {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error || '').toLowerCase();
+  return code === '23505' || message.includes('duplicate key') || message.includes('unique constraint');
+};
+
 export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const { user, profile } = useAuth();
   const [activeTab, setActiveTab] = useState<'sermons' | 'community' | 'my-notes'>('sermons');
@@ -585,54 +591,53 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
             .maybeSingle();
 
           const current = (noteData?.likes_count ?? 0);
-          const next = Math.max(0, current - 1);
+          const next = Math.max(0, current - (deletedCount || 0));
 
-          await supabase
+          const { error: updateLikesError } = await supabase
             .from('shared_notes')
             .update({ likes_count: next })
             .eq('id', noteId);
+
+          if (updateLikesError) throw updateLikesError;
         }
       } else {
-        const { data: existingLikeRows, error: existingLikeError } = await supabase
+        const { error: insertLikeError } = await supabase
           .from('note_likes')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('note_id', noteId)
-          .limit(1);
+          .insert({ user_id: user.id, note_id: noteId });
 
-        if (existingLikeError) throw existingLikeError;
-
-        if (!existingLikeRows || existingLikeRows.length === 0) {
-          await supabase
-            .from('note_likes')
-            .insert({ user_id: user.id, note_id: noteId });
-
-          const { data: noteData } = await supabase
-            .from('shared_notes')
-            .select('likes_count')
-            .eq('id', noteId)
-            .maybeSingle();
-
-          const current = (noteData?.likes_count ?? 0);
-          const next = current + 1;
-
-          await supabase
-            .from('shared_notes')
-            .update({ likes_count: next })
-            .eq('id', noteId);
+        if (insertLikeError) {
+          if (isUniqueConstraintError(insertLikeError)) {
+            return;
+          }
+          throw insertLikeError;
         }
+
+        const { data: noteData, error: noteDataError } = await supabase
+          .from('shared_notes')
+          .select('likes_count')
+          .eq('id', noteId)
+          .maybeSingle();
+
+        if (noteDataError) throw noteDataError;
+
+        const current = (noteData?.likes_count ?? 0);
+        const next = current + 1;
+
+        const { error: updateLikesError } = await supabase
+          .from('shared_notes')
+          .update({ likes_count: next })
+          .eq('id', noteId);
+
+        if (updateLikesError) throw updateLikesError;
       }
     } catch (err) {
-      // fallback to rpc in case of unexpected failure
-      if (currentlyLiked) {
-        await supabase.rpc('decrement_likes', { note_id: noteId });
-      } else {
-        await supabase.rpc('increment_likes', { note_id: noteId });
-      }
+      console.error('Error toggling note like:', err);
 
       const message = err instanceof Error ? err.message : '';
       if (message.toLowerCase().includes('likes_count')) {
         setSaveError('Likes are unavailable until migration adds shared_notes.likes_count.');
+      } else if (!isUniqueConstraintError(err)) {
+        setSaveError('We could not update that like just now.');
       }
     } finally {
       await loadCommunityNotes();
@@ -788,6 +793,12 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
           {activeTab === 'my-notes' && (
             <div>
+              <div className="mb-4 rounded-xl border border-[#c49a5c]/18 bg-white/55 px-4 py-3">
+                <p className="text-sm font-medium text-[#2c1810]">Write your own reflection on this Scripture.</p>
+                <p className="mt-1 text-sm text-[#2c1810]/62 leading-relaxed">
+                  Keep it private, or share it so other disciples can be encouraged by what you learned from this verse.
+                </p>
+              </div>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <button
@@ -800,7 +811,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                   >
                     {isPublic ? <Unlock size={16} /> : <Lock size={16} />}
                     <span className="text-sm font-medium">
-                      {isPublic ? 'Public' : 'Private'}
+                      {isPublic ? 'Shared' : 'Private'}
                     </span>
                   </button>
                   {/* explicit save button to avoid loss when user refreshes before blur */}
@@ -822,7 +833,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                 value={myNote}
                 onChange={(e) => setMyNote(e.target.value)}
                 onBlur={() => { void saveMyNote(); }}
-                placeholder="Write your reflection on this verse..."
+                placeholder="Write what stands out to you, what you want to obey, or what you want to remember from this verse..."
                 className="w-full h-64 p-4 bg-white/60 border border-[#c49a5c]/20 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50 font-serif leading-relaxed resize-none"
               />
             </div>
