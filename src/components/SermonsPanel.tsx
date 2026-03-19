@@ -4,7 +4,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { ensureBibleChapter } from '../data/bibleText';
 import { parseVerseReference } from '../utils/verseParser';
 import { parseSermonVerseRefs } from '../utils/sermonReferences';
-import { sortSermonsNewestFirst } from '../utils/sermonSorting';
+import { formatSermonDate, formatSermonMonth, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
 
 type SermonsPanelProps = {
   onClose: () => void;
@@ -70,12 +70,23 @@ const REGIONS = [
   { label: 'Gainesville', value: 'gainesville' },
 ];
 
+const PAGE_SIZE = 20;
+
+const buildVisiblePages = (current: number, total: number) => {
+  if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
+
+  if (current <= 3) return [1, 2, 3, 4, total];
+  if (current >= total - 2) return [1, total - 3, total - 2, total - 1, total];
+  return [1, current - 1, current, current + 1, total];
+};
+
 export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [sermons, setSermons] = useState<Sermon[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [region, setRegion] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -113,6 +124,10 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   useEffect(() => {
     loadSermons();
   }, [region]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, region]);
 
   const loadSermons = async () => {
     if (!isSupabaseConfigured) return;
@@ -182,6 +197,25 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
     setExpandedId(prev => (prev === id ? null : id));
   };
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE + 1;
+  const pageEnd = Math.min(currentPage * PAGE_SIZE, filtered.length);
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const visiblePages = buildVisiblePages(currentPage, totalPages);
+  const paginatedGroups = paginated.reduce<Array<{ label: string; sermons: Sermon[] }>>((groups, sermon) => {
+    const label = formatSermonMonth(getPrimarySermonDate(sermon)) || 'Earlier';
+    const lastGroup = groups[groups.length - 1];
+
+    if (lastGroup?.label === label) {
+      lastGroup.sermons.push(sermon);
+      return groups;
+    }
+
+    groups.push({ label, sermons: [sermon] });
+    return groups;
+  }, []);
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50">
       <div className="bg-[#faf8f4] w-full max-w-2xl rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col">
@@ -222,6 +256,12 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
               </button>
             ))}
           </div>
+
+          {!loading && filtered.length > 0 && (
+            <p className="text-sm text-[#2c1810]/60">
+              Showing {pageStart}-{pageEnd} of {filtered.length} sermons
+            </p>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
@@ -230,89 +270,147 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
           ) : filtered.length === 0 ? (
             <p className="text-center text-[#2c1810]/60 py-8">No sermons found.</p>
           ) : (
-            filtered.map(sermon => {
-              const isOpen = expandedId === sermon.id;
-              const verseInsights = parseVerseInsights(sermon.verse_insights);
-              const tags = parseTags(sermon.tags);
-              return (
-                <div key={sermon.id} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
-                  <button
-                    className="w-full text-left p-4 flex items-start justify-between gap-3"
-                    onClick={() => toggleExpand(sermon.id)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-[#2c1810] leading-snug">{sermon.title}</h4>
-                      <div className="flex items-center gap-2 text-sm text-[#2c1810]/70 mt-1">
-                        {sermon.speaker && <span>{sermon.speaker}</span>}
-                        {sermon.speaker && sermon.church && <span>•</span>}
-                        {sermon.church && <span>{sermon.church}</span>}
-                      </div>
-                    </div>
-                    {isOpen ? (
-                      <ChevronUp size={18} className="flex-shrink-0 text-[#c49a5c] mt-1" />
-                    ) : (
-                      <ChevronDown size={18} className="flex-shrink-0 text-[#2c1810]/40 mt-1" />
-                    )}
-                  </button>
-
-                  {isOpen && (
-                    <div className="px-4 pb-4 space-y-4 border-t border-[#c49a5c]/10 pt-3">
-                      {sermon.summary && (
-                        <p className="text-sm text-[#2c1810] leading-relaxed">{sermon.summary}</p>
-                      )}
-
-                      {verseInsights.length > 0 && (
-                        <div>
-                          <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-2">Verse Insights</p>
-                          <ul className="space-y-2">
-                            {verseInsights.map((vi, i) => (
-                              <li key={i} className="text-sm text-[#2c1810]">
-                                <p>
-                                  <span className="font-medium text-[#c49a5c]">{vi.verse}</span>
-                                  {' — '}
-                                  {vi.insight}
-                                </p>
-                                {verseTexts[vi.verse] && (
-                                  <p className="mt-1 text-xs leading-relaxed text-[#2c1810]/70 italic">
-                                    {verseTexts[vi.verse]}
-                                  </p>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {tags.map((tag, i) => (
-                            <span
-                              key={i}
-                              className="px-2 py-0.5 bg-[#c49a5c]/10 text-[#c49a5c] text-xs rounded-full"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {sermon.youtube_url && (
-                        <a
-                          href={sermon.youtube_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-block text-xs text-[#c49a5c] hover:underline"
-                        >
-                          ▶ Watch on YouTube
-                        </a>
-                      )}
-                    </div>
-                  )}
+            paginatedGroups.map((group) => (
+              <div key={group.label} className="space-y-2">
+                <div className="sticky top-0 z-10 -mx-1 px-1 py-1 bg-[#faf8f4]/95 backdrop-blur-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#2c1810]/45">
+                    {group.label}
+                  </p>
                 </div>
-              );
-            })
+
+                {group.sermons.map(sermon => {
+                  const isOpen = expandedId === sermon.id;
+                  const verseInsights = parseVerseInsights(sermon.verse_insights);
+                  const tags = parseTags(sermon.tags);
+                  const sermonDate = formatSermonDate(getPrimarySermonDate(sermon));
+
+                  return (
+                    <div key={sermon.id} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
+                      <button
+                        className="w-full text-left p-4 flex items-start justify-between gap-3"
+                        onClick={() => toggleExpand(sermon.id)}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-[#2c1810] leading-snug">{sermon.title}</h4>
+                          <div className="flex items-center gap-2 text-sm text-[#2c1810]/70 mt-1">
+                            {sermon.speaker && <span>{sermon.speaker}</span>}
+                            {sermon.speaker && sermon.church && <span>•</span>}
+                            {sermon.church && <span>{sermon.church}</span>}
+                          </div>
+                          {sermonDate && (
+                            <p className="text-xs text-[#2c1810]/50 mt-1">{sermonDate}</p>
+                          )}
+                        </div>
+                        {isOpen ? (
+                          <ChevronUp size={18} className="flex-shrink-0 text-[#c49a5c] mt-1" />
+                        ) : (
+                          <ChevronDown size={18} className="flex-shrink-0 text-[#2c1810]/40 mt-1" />
+                        )}
+                      </button>
+
+                      {isOpen && (
+                        <div className="px-4 pb-4 space-y-4 border-t border-[#c49a5c]/10 pt-3">
+                          {sermon.summary && (
+                            <p className="text-sm text-[#2c1810] leading-relaxed">{sermon.summary}</p>
+                          )}
+
+                          {verseInsights.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-2">Verse Insights</p>
+                              <ul className="space-y-2">
+                                {verseInsights.map((vi, i) => (
+                                  <li key={i} className="text-sm text-[#2c1810]">
+                                    <p className="font-medium text-[#c49a5c]">{vi.verse}</p>
+                                    {verseTexts[vi.verse] && (
+                                      <p className="mt-1 text-xs leading-relaxed text-[#2c1810]/70 italic">
+                                        {verseTexts[vi.verse]}
+                                      </p>
+                                    )}
+                                    <p className="mt-2 leading-relaxed">{vi.insight}</p>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {tags.map((tag, i) => (
+                                <span
+                                  key={i}
+                                  className="px-2 py-0.5 bg-[#c49a5c]/10 text-[#c49a5c] text-xs rounded-full"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {sermon.youtube_url && (
+                            <a
+                              href={sermon.youtube_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-block text-xs text-[#c49a5c] hover:underline"
+                            >
+                              ▶ Watch on YouTube
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))
           )}
         </div>
+
+        {!loading && filtered.length > PAGE_SIZE && (
+          <div className="border-t border-[#c49a5c]/20 px-4 py-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-[#2c1810]/60">
+              Page {currentPage} of {totalPages}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <button
+                onClick={() => setPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-sm rounded-lg bg-white border border-[#c49a5c]/30 text-[#2c1810] disabled:opacity-40"
+              >
+                Previous
+              </button>
+              {visiblePages.map((pageNumber, index) => {
+                const previousPage = visiblePages[index - 1];
+                const showGap = previousPage && pageNumber - previousPage > 1;
+
+                return (
+                  <div key={pageNumber} className="contents">
+                    {showGap && (
+                      <span className="px-1 text-sm text-[#2c1810]/40">…</span>
+                    )}
+                    <button
+                      onClick={() => setPage(pageNumber)}
+                      className={`px-3 py-1.5 text-sm rounded-lg border ${
+                        pageNumber === currentPage
+                          ? 'bg-[#c49a5c] border-[#c49a5c] text-white'
+                          : 'bg-white border-[#c49a5c]/30 text-[#2c1810]'
+                      }`}
+                    >
+                      {pageNumber}
+                    </button>
+                  </div>
+                );
+              })}
+              <button
+                onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 text-sm rounded-lg bg-white border border-[#c49a5c]/30 text-[#2c1810] disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

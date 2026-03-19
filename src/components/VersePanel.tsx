@@ -3,7 +3,7 @@ import { X, Heart, Lock, Unlock } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { getRandomCommunityName } from '../utils/verseParser';
-import { sortSermonsNewestFirst } from '../utils/sermonSorting';
+import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
 
 type VersePanelProps = {
   book: string;
@@ -30,8 +30,10 @@ type SermonGroup = {
   speaker: string;
   church: string;
   youtubeUrl: string;
-  displayText: string;
+  summary: string;
+  relevantText: string | null;
   isSummaryFallback: boolean;
+  youtubePublishedAt?: string | null;
 };
 
 function trimToSentences(text: string, max: number): string {
@@ -82,6 +84,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [likePendingIds, setLikePendingIds] = useState<Set<string>>(new Set());
   const [currentDisplayName, setCurrentDisplayName] = useState<string>('You');
+  const [expandedSermonId, setExpandedSermonId] = useState<string | null>(null);
 
   const verseRef = `${book} ${chapter}:${verse}`;
 
@@ -174,17 +177,19 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       const exact = vis.find((vi: { verse: string }) => vi.verse === verseRef);
       const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
       const insightText = exact?.insight || chMatch?.insight || null;
-      const displayText = insightText || trimToSentences(row.summary || '', 3);
+      const summary = trimToSentences(row.summary || '', 3);
       return {
         sermonId: row.id,
         title: row.title || 'Unknown Sermon',
         speaker: row.speaker || '',
         church: row.church || '',
         youtubeUrl: row.youtube_url || '',
-        displayText,
+        summary,
+        relevantText: insightText,
         isSummaryFallback: !insightText,
+        youtubePublishedAt: getPrimarySermonDate(row),
       };
-    }).filter((g: SermonGroup) => g.displayText);
+    }).filter((g: SermonGroup) => g.summary || g.relevantText);
 
     setSermonGroups(groups);
   };
@@ -625,29 +630,58 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                   No sermon content found for this verse yet.
                 </p>
               ) : (
-                sermonGroups.map((group) => (
-                  <div key={group.sermonId} className="bg-white/60 rounded-lg p-4 border border-[#c49a5c]/20">
-                    <h4 className="font-semibold text-[#2c1810] mb-1">{group.title}</h4>
-                    <div className="flex items-center gap-2 text-sm text-[#2c1810]/70 mb-3">
-                      {group.speaker && <span>{group.speaker}</span>}
-                      {group.speaker && group.church && <span>•</span>}
-                      {group.church && <span>{group.church}</span>}
-                    </div>
-                    <p className="text-[#2c1810] leading-relaxed text-sm mb-3">
-                      {group.displayText}
-                    </p>
-                    {group.youtubeUrl && (
-                      <a
-                        href={group.youtubeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-block text-xs text-[#c49a5c] hover:underline"
+                sermonGroups.map((group) => {
+                  const isOpen = expandedSermonId === group.sermonId;
+                  const sermonDate = formatSermonDate(group.youtubePublishedAt);
+
+                  return (
+                    <div key={group.sermonId} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
+                      <button
+                        onClick={() => setExpandedSermonId(prev => (prev === group.sermonId ? null : group.sermonId))}
+                        className="w-full text-left p-4"
                       >
-                        ▶ Watch on YouTube
-                      </a>
-                    )}
-                  </div>
-                ))
+                        <h4 className="font-semibold text-[#2c1810] mb-1">{group.title}</h4>
+                        <div className="flex items-center gap-2 text-sm text-[#2c1810]/70">
+                          {group.speaker && <span>{group.speaker}</span>}
+                          {group.speaker && group.church && <span>•</span>}
+                          {group.church && <span>{group.church}</span>}
+                        </div>
+                        {sermonDate && (
+                          <p className="text-xs text-[#2c1810]/50 mt-1">{sermonDate}</p>
+                        )}
+                      </button>
+
+                      {isOpen && (
+                        <div className="px-4 pb-4 border-t border-[#c49a5c]/10 pt-3 space-y-3">
+                          {group.summary && (
+                            <div>
+                              <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">Summary</p>
+                              <p className="text-[#2c1810] leading-relaxed text-sm">{group.summary}</p>
+                            </div>
+                          )}
+
+                          {group.relevantText && !group.isSummaryFallback && (
+                            <div>
+                              <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">Related To {verseRef}</p>
+                              <p className="text-[#2c1810] leading-relaxed text-sm">{group.relevantText}</p>
+                            </div>
+                          )}
+
+                          {group.youtubeUrl && (
+                            <a
+                              href={group.youtubeUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-block text-xs text-[#c49a5c] hover:underline"
+                            >
+                              ▶ Watch on YouTube
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           )}
