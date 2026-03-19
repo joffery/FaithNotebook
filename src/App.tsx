@@ -4,12 +4,13 @@ import { BibleReader } from './components/BibleReader';
 import { AuthForm } from './components/AuthForm';
 import { AIChatTab } from './components/AIChatTab';
 import { SermonsPanel } from './components/SermonsPanel';
+import { AccountSetupPrompt } from './components/AccountSetupPrompt';
 import { useAuth } from './context/AuthContext';
 import { isSupabaseConfigured } from './lib/supabase';
 
 function App() {
   console.log('App rendering');
-  const { user, loading } = useAuth();
+  const { user, profile, loading, profileLoading, needsAccountSetup } = useAuth();
 
   useEffect(() => {
     console.log('App mounted, user=', user);
@@ -23,13 +24,23 @@ function App() {
   const [showAIChat, setShowAIChat] = useState(false);
   const [showSermons, setShowSermons] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
+  const [showAccountSetupPrompt, setShowAccountSetupPrompt] = useState(false);
+
+  useEffect(() => {
+    if (needsAccountSetup) {
+      setShowAccountSetupPrompt(true);
+      return;
+    }
+
+    setShowAccountSetupPrompt(false);
+  }, [needsAccountSetup]);
 
   const handleNavigate = (book: string, chapter: number) => {
     setCurrentBook(book);
     setCurrentChapter(chapter);
   };
 
-  if (loading) {
+  if (loading || (user && profileLoading && !profile)) {
     return (
       <div className="min-h-screen bg-[#faf8f4] flex items-center justify-center">
         <div className="text-center">
@@ -78,7 +89,7 @@ function App() {
         <SermonsPanel onClose={() => setShowSermons(false)} />
       )}
 
-      {showIntro && (
+      {showIntro && !showAccountSetupPrompt && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white p-8 rounded-lg max-w-md text-center">
             <h2 className="text-2xl font-serif mb-4">Welcome to Faith Notebook</h2>
@@ -104,6 +115,10 @@ function App() {
             </button>
           </div>
         </div>
+      )}
+
+      {showAccountSetupPrompt && (
+        <AccountSetupPrompt onClose={() => setShowAccountSetupPrompt(false)} />
       )}
 
       <div className="fixed bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#faf8f4] to-transparent pointer-events-none"></div>

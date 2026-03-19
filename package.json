@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "recover:legacy": "node ./src/scripts/manualRecoverLegacyUser.js",
     "sync:bible": "node ./src/scripts/syncBibleFromSermons.js",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json"

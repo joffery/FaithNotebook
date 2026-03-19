@@ -32,18 +32,39 @@ export type Database = {
         Row: {
           id: string;
           display_name: string;
+          username: string | null;
+          recovery_email: string | null;
+          recovery_email_added_at: string | null;
+          recovery_email_verified_at: string | null;
+          account_setup_completed_at: string | null;
+          avatar_url: string | null;
+          avatar_updated_at: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id: string;
           display_name?: string;
+          username?: string | null;
+          recovery_email?: string | null;
+          recovery_email_added_at?: string | null;
+          recovery_email_verified_at?: string | null;
+          account_setup_completed_at?: string | null;
+          avatar_url?: string | null;
+          avatar_updated_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           display_name?: string;
+          username?: string | null;
+          recovery_email?: string | null;
+          recovery_email_added_at?: string | null;
+          recovery_email_verified_at?: string | null;
+          account_setup_completed_at?: string | null;
+          avatar_url?: string | null;
+          avatar_updated_at?: string | null;
           updated_at?: string;
         };
       };

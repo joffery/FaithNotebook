@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { X, Heart, Lock, Unlock } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { getRandomCommunityName, parseVerseReference } from '../utils/verseParser';
+import { parseVerseReference } from '../utils/verseParser';
 import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
+import { ProfileAvatar } from './ProfileAvatar';
 
 type VersePanelProps = {
   book: string;
@@ -20,6 +21,8 @@ type SharedNote = {
   created_at: string;
   profile?: {
     display_name: string;
+    username?: string | null;
+    avatar_url?: string | null;
   };
   is_liked_by_user?: boolean;
 };
@@ -72,8 +75,13 @@ const matchesVerseReference = (candidate: string, book: string, chapter: number,
   return parsed.some((item) => item.book === book && item.chapter === chapter && item.verse === verse);
 };
 
+const isMissingProfileFieldError = (error: unknown) => {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error || '').toLowerCase();
+  return message.includes('username') || message.includes('avatar_url');
+};
+
 export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [activeTab, setActiveTab] = useState<'sermons' | 'community' | 'my-notes'>('sermons');
   const [myNote, setMyNote] = useState('');
   const [noteId, setNoteId] = useState<string | null>(null);
@@ -116,19 +124,33 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const loadCurrentDisplayName = async () => {
     if (!user) return;
 
-    const fallback = user.email?.split('@')[0] || 'You';
-    const { data, error } = await supabase
+    const fallback =
+      profile?.display_name?.trim() ||
+      profile?.username?.trim() ||
+      user.email?.split('@')[0] ||
+      'You';
+    let { data, error } = await supabase
       .from('profiles')
-      .select('display_name')
+      .select('display_name, username')
       .eq('id', user.id)
       .maybeSingle();
+
+    if (error && isMissingProfileFieldError(error)) {
+      const fallback = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('id', user.id)
+        .maybeSingle();
+      data = fallback.data as any;
+      error = fallback.error;
+    }
 
     if (error) {
       setCurrentDisplayName(fallback);
       return;
     }
 
-    setCurrentDisplayName(data?.display_name || fallback);
+    setCurrentDisplayName(data?.display_name?.trim() || data?.username?.trim() || fallback);
   };
 
   const loadSermonChunks = async () => {
@@ -310,15 +332,26 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         .eq('user_id', user.id);
 
       const userIds = [...new Set((notesData || []).map((note: any) => note.user_id).filter(Boolean))];
-      let profileMap = new Map<string, string>();
+      let profileMap = new Map<string, { display_name?: string | null; username?: string | null; avatar_url?: string | null }>();
 
       if (userIds.length > 0) {
-        const { data: profilesData } = await supabase
+        let { data: profilesData, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, display_name')
+          .select('id, display_name, username, avatar_url')
           .in('id', userIds);
 
-        profileMap = new Map((profilesData || []).map((p: any) => [p.id, p.display_name]));
+        if (profilesError && isMissingProfileFieldError(profilesError)) {
+          const fallback = await supabase
+            .from('profiles')
+            .select('id, display_name')
+            .in('id', userIds);
+          profilesData = fallback.data as any;
+          profilesError = fallback.error;
+        }
+
+        if (!profilesError) {
+          profileMap = new Map((profilesData || []).map((p: any) => [p.id, p]));
+        }
       }
 
       const likedNoteIds = new Set(likesData?.map((like: any) => like.note_id) || []);
@@ -327,8 +360,11 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         ...note,
         profile: {
           display_name:
-            profileMap.get(note.user_id) ||
-            (note.user_id === user.id ? currentDisplayName : getRandomCommunityName(note.user_id)),
+            profileMap.get(note.user_id)?.display_name?.trim() ||
+            profileMap.get(note.user_id)?.username?.trim() ||
+            (note.user_id === user.id ? currentDisplayName : 'Church Member'),
+          username: profileMap.get(note.user_id)?.username || null,
+          avatar_url: profileMap.get(note.user_id)?.avatar_url || null,
         },
         is_liked_by_user: likedNoteIds.has(note.id),
       })));
@@ -691,10 +727,17 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
               ) : (
                 communityNotes.map(note => (
                   <div key={note.id} className="bg-white/60 rounded-lg p-4 border border-[#c49a5c]/20">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-[#2c1810]">
-                        {note.profile?.display_name || getRandomCommunityName(note.user_id)}
-                      </span>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <ProfileAvatar
+                          displayName={note.profile?.display_name}
+                          avatarUrl={note.profile?.avatar_url}
+                          size="sm"
+                        />
+                        <span className="font-medium text-[#2c1810] truncate">
+                          {note.profile?.display_name || 'Church Member'}
+                        </span>
+                      </div>
                       <span className="text-sm text-[#2c1810]/60">
                         {new Date(note.created_at).toLocaleDateString()}
                       </span>

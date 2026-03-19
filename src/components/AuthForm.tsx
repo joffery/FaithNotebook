@@ -2,6 +2,24 @@ import { useEffect, useState } from 'react';
 import { Book } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+const toFriendlyAuthError = (message?: string) => {
+  const text = message?.toLowerCase() || '';
+
+  if (text.includes('invalid login credentials')) {
+    return 'That username or password did not match. Please try again.';
+  }
+
+  if (text.includes('user already registered')) {
+    return 'That username is already taken. Please sign in instead.';
+  }
+
+  if (text.includes('password')) {
+    return 'Please check your password and try again.';
+  }
+
+  return 'Something went wrong. Please try again.';
+};
+
 export function AuthForm() {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<'sign-in' | 'create-account'>('sign-in');
@@ -28,19 +46,19 @@ export function AuthForm() {
       if (mode === 'sign-in') {
         const { error: signInError } = await signIn(cleanUsername, password);
         if (signInError) {
-          setError(signInError.message || 'Could not sign in');
+          setError(toFriendlyAuthError(signInError.message));
           return;
         }
       } else {
         const { error: signUpError } = await signUp(cleanUsername, password);
         if (signUpError) {
-          setError(signUpError.message || 'Could not create account');
+          setError(toFriendlyAuthError(signUpError.message));
           return;
         }
 
         const { error: finalSignInError } = await signIn(cleanUsername, password);
         if (finalSignInError) {
-          setError(finalSignInError.message || 'Sign in after sign up failed');
+          setError(toFriendlyAuthError(finalSignInError.message));
           return;
         }
       }
