@@ -33,6 +33,7 @@ type SermonGroup = {
   summary: string;
   relevantText: string | null;
   isSummaryFallback: boolean;
+  matchType: 'exact' | 'broader';
   youtubePublishedAt?: string | null;
 };
 
@@ -84,7 +85,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [likePendingIds, setLikePendingIds] = useState<Set<string>>(new Set());
   const [currentDisplayName, setCurrentDisplayName] = useState<string>('You');
-  const [expandedSermonId, setExpandedSermonId] = useState<string | null>(null);
+  const [expandedSermonIds, setExpandedSermonIds] = useState<Set<string>>(new Set());
 
   const verseRef = `${book} ${chapter}:${verse}`;
 
@@ -102,6 +103,16 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       saveMyNote();
     };
   }, [user, book, chapter, verse]);
+
+  useEffect(() => {
+    setExpandedSermonIds(
+      new Set(
+        sermonGroups
+          .filter((group) => group.matchType === 'exact')
+          .map((group) => group.sermonId)
+      )
+    );
+  }, [sermonGroups]);
 
   const loadCurrentDisplayName = async () => {
     if (!user) return;
@@ -170,24 +181,36 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
     console.log('VersePanel sermon matched data:', matchedRows);
 
-    const groups: SermonGroup[] = matchedRows.map((row: any) => {
-      const vis = parseVerseInsights(row.verse_insights);
-      const exact = vis.find((vi: { verse: string }) => vi.verse === verseRef);
-      const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
-      const insightText = exact?.insight || chMatch?.insight || null;
-      const summary = trimToSentences(row.summary || '', 3);
-      return {
-        sermonId: row.id,
-        title: row.title || 'Unknown Sermon',
-        speaker: row.speaker || '',
-        church: row.church || '',
-        youtubeUrl: row.youtube_url || '',
-        summary,
-        relevantText: insightText,
-        isSummaryFallback: !insightText,
-        youtubePublishedAt: getPrimarySermonDate(row),
-      };
-    }).filter((g: SermonGroup) => g.summary || g.relevantText);
+    const groups = matchedRows
+      .map((row: any): SermonGroup | null => {
+        const vis = parseVerseInsights(row.verse_insights);
+        const refs = parseVerseRefs(row.verses);
+        const exact = vis.find((vi: { verse: string }) => vi.verse === verseRef);
+        const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
+        const hasExactRef = refs.includes(verseRef);
+        const hasExactInsight = !!exact;
+        const insightText = exact?.insight || chMatch?.insight || null;
+        const summary = trimToSentences(row.summary || '', 3);
+        const matchType: SermonGroup['matchType'] = hasExactInsight || hasExactRef ? 'exact' : 'broader';
+
+        if (!summary && !insightText) {
+          return null;
+        }
+
+        return {
+          sermonId: row.id,
+          title: row.title || 'Unknown Sermon',
+          speaker: row.speaker || '',
+          church: row.church || '',
+          youtubeUrl: row.youtube_url || '',
+          summary,
+          relevantText: insightText,
+          isSummaryFallback: !insightText,
+          matchType,
+          youtubePublishedAt: getPrimarySermonDate(row),
+        };
+      })
+      .filter((group): group is SermonGroup => group !== null);
 
     setSermonGroups(groups);
   };
@@ -589,6 +612,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     }
   };
 
+  const exactMatches = sermonGroups.filter((group) => group.matchType === 'exact');
+  const broaderMatches = sermonGroups.filter((group) => group.matchType === 'broader');
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 animate-fadeIn">
       <div className="bg-[#faf8f4] w-full max-w-2xl rounded-t-2xl shadow-2xl max-h-[80vh] flex flex-col animate-slideUp">
@@ -628,58 +654,35 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                   No sermon content found for this verse yet.
                 </p>
               ) : (
-                sermonGroups.map((group) => {
-                  const isOpen = expandedSermonId === group.sermonId;
-                  const sermonDate = formatSermonDate(group.youtubePublishedAt);
-
-                  return (
-                    <div key={group.sermonId} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
-                      <button
-                        onClick={() => setExpandedSermonId(prev => (prev === group.sermonId ? null : group.sermonId))}
-                        className="w-full text-left p-4"
-                      >
-                        <h4 className="font-semibold text-[#2c1810] mb-1">{group.title}</h4>
-                        <div className="flex items-center gap-2 text-sm text-[#2c1810]/70">
-                          {group.speaker && <span>{group.speaker}</span>}
-                          {group.speaker && group.church && <span>•</span>}
-                          {group.church && <span>{group.church}</span>}
-                        </div>
-                        {sermonDate && (
-                          <p className="text-xs text-[#2c1810]/50 mt-1">{sermonDate}</p>
-                        )}
-                      </button>
-
-                      {isOpen && (
-                        <div className="px-4 pb-4 border-t border-[#c49a5c]/10 pt-3 space-y-3">
-                          {group.summary && (
-                            <div>
-                              <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">Summary</p>
-                              <p className="text-[#2c1810] leading-relaxed text-sm">{group.summary}</p>
-                            </div>
-                          )}
-
-                          {group.relevantText && !group.isSummaryFallback && (
-                            <div>
-                              <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">Related To {verseRef}</p>
-                              <p className="text-[#2c1810] leading-relaxed text-sm">{group.relevantText}</p>
-                            </div>
-                          )}
-
-                          {group.youtubeUrl && (
-                            <a
-                              href={group.youtubeUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-block text-xs text-[#c49a5c] hover:underline"
-                            >
-                              ▶ Watch on YouTube
-                            </a>
-                          )}
-                        </div>
-                      )}
+                <>
+                  {exactMatches.length > 0 && (
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">
+                          Directly About {verseRef}
+                        </p>
+                        <p className="text-sm text-[#2c1810]/60">
+                          Sermons that directly mention or explain this exact verse.
+                        </p>
+                      </div>
+                      {exactMatches.map((group) => renderSermonCard(group))}
                     </div>
-                  );
-                })
+                  )}
+
+                  {broaderMatches.length > 0 && (
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">
+                          More From {book} {chapter}
+                        </p>
+                        <p className="text-sm text-[#2c1810]/60">
+                          Broader chapter-level sermons that may still help with context.
+                        </p>
+                      </div>
+                      {broaderMatches.map((group) => renderSermonCard(group))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -765,4 +768,67 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       </div>
     </div>
   );
+
+  function renderSermonCard(group: SermonGroup) {
+    const isOpen = expandedSermonIds.has(group.sermonId);
+    const sermonDate = formatSermonDate(group.youtubePublishedAt);
+
+    return (
+      <div key={group.sermonId} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
+        <button
+          onClick={() =>
+            setExpandedSermonIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(group.sermonId)) {
+                next.delete(group.sermonId);
+              } else {
+                next.add(group.sermonId);
+              }
+              return next;
+            })
+          }
+          className="w-full text-left p-4"
+        >
+          <h4 className="font-semibold text-[#2c1810] mb-1">{group.title}</h4>
+          <div className="flex items-center gap-2 text-sm text-[#2c1810]/70">
+            {group.speaker && <span>{group.speaker}</span>}
+            {group.speaker && group.church && <span>•</span>}
+            {group.church && <span>{group.church}</span>}
+          </div>
+          {sermonDate && (
+            <p className="text-xs text-[#2c1810]/50 mt-1">{sermonDate}</p>
+          )}
+        </button>
+
+        {isOpen && (
+          <div className="px-4 pb-4 border-t border-[#c49a5c]/10 pt-3 space-y-3">
+            {group.summary && (
+              <div>
+                <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">Summary</p>
+                <p className="text-[#2c1810] leading-relaxed text-sm">{group.summary}</p>
+              </div>
+            )}
+
+            {group.relevantText && !group.isSummaryFallback && (
+              <div>
+                <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">Related To {verseRef}</p>
+                <p className="text-[#2c1810] leading-relaxed text-sm">{group.relevantText}</p>
+              </div>
+            )}
+
+            {group.youtubeUrl && (
+              <a
+                href={group.youtubeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-xs text-[#c49a5c] hover:underline"
+              >
+                ▶ Watch on YouTube
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 }
