@@ -50,39 +50,22 @@ export const parseSermonVerseRefs = (value: unknown): string[] => {
   return [];
 };
 
-const parseChapterReference = (ref: string): { book: string; chapter: number } | null => {
-  const match = ref.match(/^(.+?)\s+(\d+)$/);
-  if (!match) return null;
-
-  return {
-    book: match[1].trim(),
-    chapter: Number.parseInt(match[2], 10),
-  };
-};
-
 const addVerseRefToIndex = (index: SermonReferenceIndex, ref: string) => {
   const parsedVerses = parseVerseReference(ref);
-  if (parsedVerses.length > 0) {
-    const { book, chapter } = parsedVerses[0];
-    const chapterKey = `${book} ${chapter}`;
+  if (parsedVerses.length === 0) return;
 
-    index.books.add(book);
-    index.chapters.add(chapterKey);
+  const { book, chapter } = parsedVerses[0];
+  const chapterKey = `${book} ${chapter}`;
 
-    if (!index.versesByChapter.has(chapterKey)) {
-      index.versesByChapter.set(chapterKey, new Set<number>());
-    }
+  index.books.add(book);
+  index.chapters.add(chapterKey);
 
-    const verseSet = index.versesByChapter.get(chapterKey)!;
-    parsedVerses.forEach(({ verse }) => verseSet.add(verse));
-    return;
+  if (!index.versesByChapter.has(chapterKey)) {
+    index.versesByChapter.set(chapterKey, new Set<number>());
   }
 
-  const parsedChapter = parseChapterReference(ref);
-  if (!parsedChapter) return;
-
-  index.books.add(parsedChapter.book);
-  index.chapters.add(`${parsedChapter.book} ${parsedChapter.chapter}`);
+  const verseSet = index.versesByChapter.get(chapterKey)!;
+  parsedVerses.forEach(({ verse }) => verseSet.add(verse));
 };
 
 export async function getSermonReferenceIndex(): Promise<SermonReferenceIndex> {
@@ -103,12 +86,9 @@ export async function getSermonReferenceIndex(): Promise<SermonReferenceIndex> {
     }
 
     for (const row of data || []) {
-      const refs = [
-        ...parseSermonVerseRefs((row as any).verses),
-        ...parseSermonVerseInsights((row as any).verse_insights)
-          .map((insight) => insight?.verse)
-          .filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0),
-      ];
+      const refs = parseSermonVerseInsights((row as any).verse_insights)
+        .map((insight) => insight?.verse)
+        .filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0);
 
       refs.forEach((ref) => addVerseRefToIndex(index, ref));
     }

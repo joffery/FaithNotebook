@@ -5,10 +5,23 @@
   "display": "standalone",
   "background_color": "#faf8f4",
   "theme_color": "#c49a5c",
+  "description": "Read Scripture, explore related sermons, ask Bible questions, and keep personal notes.",
   "icons": [
     {
-      "src": "/vite.svg",
-      "sizes": "any",
+      "src": "/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/faith-notebook-icon.svg",
+      "sizes": "1024x1024",
       "type": "image/svg+xml",
       "purpose": "any"
     }

@@ -301,6 +301,19 @@ export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettings
             </button>
           </div>
 
+          <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 p-4 space-y-2">
+            <div>
+              <h3 className="text-lg font-serif text-[#2c1810]">Add to Home Screen</h3>
+              <p className="text-sm text-[#2c1810]/60 mt-1 leading-relaxed">
+                Put Faith Notebook on your phone like an app so it is easier to come back to each day.
+              </p>
+            </div>
+            <div className="rounded-xl bg-[#f6efe3] px-3 py-3 text-sm text-[#2c1810]/75 leading-relaxed">
+              <p>On iPhone: open this site in Safari, tap Share, then choose <span className="font-medium text-[#2c1810]">Add to Home Screen</span>.</p>
+              <p className="mt-2">On Android: open the browser menu, then choose <span className="font-medium text-[#2c1810]">Add to Home screen</span> or <span className="font-medium text-[#2c1810]">Install app</span>.</p>
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={signOut}
