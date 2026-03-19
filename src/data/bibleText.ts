@@ -1,3 +1,5 @@
+import { normalizeBibleBookName } from '../utils/verseParser';
+
 export type BibleVerse = {
   verse: number;
   text: string;
@@ -91,7 +93,7 @@ const BOOK_API_CODES: Record<string, string> = {
   Revelation: 'REV',
 };
 
-const getChapterKey = (book: string, chapter: number) => `${book}-${chapter}`;
+const getChapterKey = (book: string, chapter: number) => `${normalizeBibleBookName(book)}-${chapter}`;
 
 const readStoredChapter = (key: string): BibleChapter | null => {
   if (typeof window === 'undefined') return null;
@@ -431,7 +433,8 @@ export const bibleChapters: Record<string, BibleChapter> = {
 };
 
 export function getBibleChapter(book: string, chapter: number): BibleChapter | null {
-  const key = getChapterKey(book, chapter);
+  const normalizedBook = normalizeBibleBookName(book);
+  const key = getChapterKey(normalizedBook, chapter);
   return runtimeBibleCache[key] || readStoredChapter(key);
 }
 
@@ -496,19 +499,20 @@ export function searchAvailableBibleText(query: string, limit: number = 30): Bib
 }
 
 const getFallbackBibleChapter = (book: string, chapter: number): BibleChapter | null => {
-  const key = getChapterKey(book, chapter);
+  const key = getChapterKey(normalizeBibleBookName(book), chapter);
   return bibleChapters[key] || null;
 };
 
 // Prefer a modern translation API, then fall back to previously bundled local text.
 export async function ensureBibleChapter(book: string, chapter: number, forceRefresh: boolean = false): Promise<BibleChapter | null> {
-  const key = getChapterKey(book, chapter);
-  const cached = getBibleChapter(book, chapter);
-  const fallback = getFallbackBibleChapter(book, chapter);
+  const normalizedBook = normalizeBibleBookName(book);
+  const key = getChapterKey(normalizedBook, chapter);
+  const cached = getBibleChapter(normalizedBook, chapter);
+  const fallback = getFallbackBibleChapter(normalizedBook, chapter);
 
   if (cached && !forceRefresh) return cached;
 
-  const bookCode = BOOK_API_CODES[book];
+  const bookCode = BOOK_API_CODES[normalizedBook];
   if (!bookCode) {
     return cached || fallback || null;
   }
@@ -538,7 +542,7 @@ export async function ensureBibleChapter(book: string, chapter: number, forceRef
 
     if (verses.length === 0) return cached || fallback || null;
 
-    const chapterData: BibleChapter = { book, chapter, verses };
+    const chapterData: BibleChapter = { book: normalizedBook, chapter, verses };
     storeChapter(key, chapterData);
     return chapterData;
   } catch (err) {

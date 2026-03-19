@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, X, ArrowRight, BookOpen } from 'lucide-react';
 import { bibleBooks } from '../data/bibleBooks';
 import { searchAvailableBibleText } from '../data/bibleText';
-import { parseVerseReference } from '../utils/verseParser';
+import { normalizeBibleBookName, parseVerseReference } from '../utils/verseParser';
 import { getSermonReferenceIndex, getVerseNumbersForChapter, hasChapterSermons, SermonReferenceIndex } from '../utils/sermonReferences';
 
 type BibleSearchModalProps = {
@@ -41,7 +41,7 @@ const parseReferenceMatch = (query: string): ReferenceMatch | null => {
   const chapterMatch = trimmed.match(/^(.+?)\s+(\d+)$/);
   if (!chapterMatch) return null;
 
-  const bookName = chapterMatch[1].trim();
+  const bookName = normalizeBibleBookName(chapterMatch[1].trim());
   const chapter = Number(chapterMatch[2]);
   const book = bibleBooks.find((item) => item.name.toLowerCase() === bookName.toLowerCase());
   if (!book || !Number.isFinite(chapter) || chapter < 1 || chapter > book.chapters) return null;

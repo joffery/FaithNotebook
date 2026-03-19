@@ -87,6 +87,12 @@ const isUniqueConstraintError = (error: unknown) => {
   return code === '23505' || message.includes('duplicate key') || message.includes('unique constraint');
 };
 
+const isMissingNoteLikesTableError = (error: unknown) => {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error || '').toLowerCase();
+  return code === '42P01' || message.includes('note_likes') || message.includes('relation') && message.includes('does not exist');
+};
+
 export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const { user, profile } = useAuth();
   const [activeTab, setActiveTab] = useState<'sermons' | 'community' | 'my-notes'>('sermons');
@@ -122,6 +128,10 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       saveMyNote();
     };
   }, [user, book, chapter, verse]);
+
+  useEffect(() => {
+    setSaveError(null);
+  }, [activeTab]);
 
   useEffect(() => {
     setExpandedSermonIds(
@@ -360,10 +370,17 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     }
 
     if (notesData) {
-      const { data: likesData } = await supabase
+      let likesData: any[] | null = null;
+      const { data: rawLikesData, error: likesError } = await supabase
         .from('note_likes')
         .select('note_id')
         .eq('user_id', user.id);
+
+      if (likesError && !isMissingNoteLikesTableError(likesError)) {
+        console.error('Error loading note likes:', likesError);
+      } else {
+        likesData = rawLikesData;
+      }
 
       const userIds = [...new Set((notesData || []).map((note: any) => note.user_id).filter(Boolean))];
       let profileMap = new Map<string, { display_name?: string | null; username?: string | null; avatar_url?: string | null }>();
@@ -636,6 +653,10 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
           if (isUniqueConstraintError(insertLikeError)) {
             return;
           }
+          if (isMissingNoteLikesTableError(insertLikeError)) {
+            setSaveError('Likes are not ready yet. Please run the latest Supabase migrations for note likes.');
+            return;
+          }
           throw insertLikeError;
         }
 
@@ -661,7 +682,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       console.error('Error toggling note like:', err);
 
       const message = err instanceof Error ? err.message : '';
-      if (message.toLowerCase().includes('likes_count')) {
+      if (isMissingNoteLikesTableError(err)) {
+        setSaveError('Likes are not ready yet. Please run the latest Supabase migrations for note likes.');
+      } else if (message.toLowerCase().includes('likes_count')) {
         setSaveError('Likes are unavailable until migration adds shared_notes.likes_count.');
       } else if (!isUniqueConstraintError(err)) {
         setSaveError('We could not update that like just now.');
@@ -802,9 +825,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const broaderMatches = sermonGroups.filter((group) => group.matchType === 'broader');
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 animate-fadeIn">
-      <div className="bg-[#faf8f4] w-full max-w-2xl rounded-t-2xl shadow-2xl max-h-[80vh] flex flex-col animate-slideUp">
-        <div className="flex items-center justify-between p-6 border-b border-[#c49a5c]/20">
+    <div className="fixed inset-0 bg-black/45 flex items-end justify-center z-[95] animate-fadeIn">
+      <div className="bg-[#faf8f4] w-full max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[80vh] rounded-none sm:rounded-t-2xl shadow-2xl flex flex-col animate-slideUp">
+        <div className="flex items-center justify-between px-5 py-5 sm:p-6 border-b border-[#c49a5c]/20">
           <h3 className="text-xl font-serif text-[#2c1810]">{verseRef}</h3>
           <button
             onClick={onClose}
@@ -814,7 +837,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
           </button>
         </div>
 
-        <div className="flex border-b border-[#c49a5c]/20 overflow-x-auto">
+        <div className="flex border-b border-[#c49a5c]/20 overflow-x-auto bg-[#faf8f4]">
           {(['sermons', 'community', 'my-notes'] as const).map(tab => (
             <button
               key={tab}
@@ -832,7 +855,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28 sm:pb-6">
           <div className="mb-6 rounded-xl border border-[#c49a5c]/18 bg-white/65 px-4 py-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">

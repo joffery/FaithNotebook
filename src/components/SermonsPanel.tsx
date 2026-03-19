@@ -5,10 +5,10 @@ import { ensureBibleChapter } from '../data/bibleText';
 import { parseVerseReference } from '../utils/verseParser';
 import { parseSermonVerseRefs } from '../utils/sermonReferences';
 import { formatSermonDate, formatSermonMonth, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
+import { VersePanel } from './VersePanel';
 
 type SermonsPanelProps = {
   onClose: () => void;
-  onOpenScripture?: (book: string, chapter: number, verse: number) => void;
 };
 
 type VerseInsight = {
@@ -109,7 +109,7 @@ const getPrimaryScriptureTarget = (sermon: Sermon) => {
   return null;
 };
 
-export function SermonsPanel({ onClose, onOpenScripture }: SermonsPanelProps) {
+export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [sermons, setSermons] = useState<Sermon[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -117,6 +117,7 @@ export function SermonsPanel({ onClose, onOpenScripture }: SermonsPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
+  const [selectedVerseRef, setSelectedVerseRef] = useState<{ book: string; chapter: number; verse: number } | null>(null);
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -258,8 +259,9 @@ export function SermonsPanel({ onClose, onOpenScripture }: SermonsPanelProps) {
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50">
-      <div className="bg-[#faf8f4] w-full max-w-2xl rounded-t-2xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[85vh] flex flex-col">
+    <>
+      <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50">
+        <div className="bg-[#faf8f4] w-full max-w-2xl rounded-t-2xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-4 py-4 sm:p-6 border-b border-[#c49a5c]/20">
           <h3 className="text-lg sm:text-xl font-serif text-[#2c1810]">Sermons</h3>
           <button
@@ -372,16 +374,15 @@ export function SermonsPanel({ onClose, onOpenScripture }: SermonsPanelProps) {
                               </a>
                             )}
 
-                            {primaryScriptureTarget && onOpenScripture && (
+                            {primaryScriptureTarget && (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  onOpenScripture(
-                                    primaryScriptureTarget.book,
-                                    primaryScriptureTarget.chapter,
-                                    primaryScriptureTarget.verse
-                                  );
-                                  onClose();
+                                  setSelectedVerseRef({
+                                    book: primaryScriptureTarget.book,
+                                    chapter: primaryScriptureTarget.chapter,
+                                    verse: primaryScriptureTarget.verse,
+                                  });
                                 }}
                                 className="inline-flex items-center justify-center rounded-lg border border-[#c49a5c]/30 bg-white px-3 py-2 text-sm font-medium text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
                               >
@@ -403,7 +404,7 @@ export function SermonsPanel({ onClose, onOpenScripture }: SermonsPanelProps) {
                                 {scriptureRefs.slice(0, 6).map((ref) => {
                                   const parsed = parseVerseReference(ref);
                                   const first = parsed[0];
-                                  const isOpenable = !!first && !!onOpenScripture;
+                                  const isOpenable = !!first;
 
                                   return (
                                     <button
@@ -411,9 +412,12 @@ export function SermonsPanel({ onClose, onOpenScripture }: SermonsPanelProps) {
                                       type="button"
                                       disabled={!isOpenable}
                                       onClick={() => {
-                                        if (!first || !onOpenScripture) return;
-                                        onOpenScripture(first.book, first.chapter, first.verse);
-                                        onClose();
+                                        if (!first) return;
+                                        setSelectedVerseRef({
+                                          book: first.book,
+                                          chapter: first.chapter,
+                                          verse: first.verse,
+                                        });
                                       }}
                                       className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
                                         isOpenable
@@ -532,8 +536,18 @@ export function SermonsPanel({ onClose, onOpenScripture }: SermonsPanelProps) {
             </div>
           </div>
         )}
+        </div>
       </div>
-    </div>
+
+      {selectedVerseRef && (
+        <VersePanel
+          book={selectedVerseRef.book}
+          chapter={selectedVerseRef.chapter}
+          verse={selectedVerseRef.verse}
+          onClose={() => setSelectedVerseRef(null)}
+        />
+      )}
+    </>
   );
 }
 

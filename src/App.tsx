@@ -11,6 +11,7 @@ import { MyNotesPanel } from './components/MyNotesPanel';
 import { BibleSearchModal } from './components/BibleSearchModal';
 import { useAuth } from './context/AuthContext';
 import { isSupabaseConfigured } from './lib/supabase';
+import { normalizeBibleBookName } from './utils/verseParser';
 
 const LAST_READING_POSITION_KEY = 'faith-notebook-last-reading-position';
 
@@ -26,7 +27,7 @@ function App() {
     try {
       const raw = window.localStorage.getItem(LAST_READING_POSITION_KEY);
       const parsed = raw ? JSON.parse(raw) : null;
-      return parsed?.book || 'Matthew';
+      return normalizeBibleBookName(parsed?.book || 'Matthew');
     } catch {
       return 'Matthew';
     }
@@ -71,7 +72,7 @@ function App() {
   }, [currentBook, currentChapter]);
 
   const handleNavigate = (book: string, chapter: number) => {
-    setCurrentBook(book);
+    setCurrentBook(normalizeBibleBookName(book));
     setCurrentChapter(chapter);
   };
 
@@ -133,15 +134,6 @@ function App() {
       {showSermons && (
         <SermonsPanel
           onClose={() => setShowSermons(false)}
-          onOpenScripture={(book, chapter, verse) => {
-            setCurrentBook(book);
-            setCurrentChapter(chapter);
-            setSelectedVerseFromApp(verse);
-            setShowSermons(false);
-            setShowAIChat(false);
-            setShowProfileSettings(false);
-            setShowMyNotes(false);
-          }}
         />
       )}
 
@@ -175,7 +167,7 @@ function App() {
         <BibleSearchModal
           onClose={() => setShowBibleSearch(false)}
           onSelectResult={(book, chapter, verse) => {
-            setCurrentBook(book);
+            setCurrentBook(normalizeBibleBookName(book));
             setCurrentChapter(chapter);
             setSelectedVerseFromApp(verse ?? null);
             setShowBibleSearch(false);

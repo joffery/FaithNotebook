@@ -4,11 +4,25 @@ export type ParsedVerse = {
   verse: number;
 };
 
+const BOOK_NAME_ALIASES: Record<string, string> = {
+  Psalm: 'Psalms',
+  Psalms: 'Psalms',
+  Proverbs: 'Proverbs',
+  Song: 'Song of Solomon',
+  'Song of Songs': 'Song of Solomon',
+  Canticles: 'Song of Solomon',
+};
+
+export function normalizeBibleBookName(book: string): string {
+  const trimmed = book.trim();
+  return BOOK_NAME_ALIASES[trimmed] || trimmed;
+}
+
 export function parseVerseReference(verseRef: string): ParsedVerse[] {
   const match = verseRef.match(/^(.+?)\s+(\d+):(\d+)(?:-(\d+))?$/);
   if (!match) return [];
 
-  const book = match[1].trim();
+  const book = normalizeBibleBookName(match[1]);
   const chapter = parseInt(match[2], 10);
   const startVerse = parseInt(match[3], 10);
   const endVerse = match[4] ? parseInt(match[4], 10) : startVerse;
