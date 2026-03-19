@@ -9,6 +9,13 @@ export type BibleChapter = {
   verses: BibleVerse[];
 };
 
+export type BibleSearchResult = {
+  book: string;
+  chapter: number;
+  verse: number;
+  text: string;
+};
+
 const BIBLE_TRANSLATION_ID = 'BSB';
 const BIBLE_TRANSLATION_LABEL = 'Berean Standard Bible';
 const CACHE_STORAGE_PREFIX = 'faith-notebook-bible-chapter';
@@ -430,6 +437,62 @@ export function getBibleChapter(book: string, chapter: number): BibleChapter | n
 
 export function getBibleTranslationLabel(): string {
   return BIBLE_TRANSLATION_LABEL;
+}
+
+export function getAvailableBibleChapters(): BibleChapter[] {
+  const chapterMap = new Map<string, BibleChapter>();
+
+  Object.entries(bibleChapters).forEach(([key, value]) => {
+    chapterMap.set(key, value);
+  });
+
+  Object.entries(runtimeBibleCache).forEach(([key, value]) => {
+    chapterMap.set(key, value);
+  });
+
+  if (typeof window !== 'undefined') {
+    try {
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const storageKey = window.localStorage.key(i);
+        if (!storageKey || !storageKey.startsWith(`${CACHE_STORAGE_PREFIX}:`)) continue;
+
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) continue;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed?.book || !parsed?.chapter || !Array.isArray(parsed?.verses)) continue;
+
+        const key = getChapterKey(parsed.book, parsed.chapter);
+        chapterMap.set(key, parsed as BibleChapter);
+      }
+    } catch {
+      // Ignore malformed cache entries and continue with what we have.
+    }
+  }
+
+  return Array.from(chapterMap.values());
+}
+
+export function searchAvailableBibleText(query: string, limit: number = 30): BibleSearchResult[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return [];
+
+  const results: BibleSearchResult[] = [];
+
+  getAvailableBibleChapters().forEach((chapterData) => {
+    chapterData.verses.forEach((verse) => {
+      if (!verse.text.toLowerCase().includes(normalizedQuery)) return;
+
+      results.push({
+        book: chapterData.book,
+        chapter: chapterData.chapter,
+        verse: verse.verse,
+        text: verse.text,
+      });
+    });
+  });
+
+  return results.slice(0, limit);
 }
 
 const getFallbackBibleChapter = (book: string, chapter: number): BibleChapter | null => {

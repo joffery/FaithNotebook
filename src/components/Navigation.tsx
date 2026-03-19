@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Book, ChevronDown, MessageCircle } from 'lucide-react';
+import { Book, ChevronDown, MessageCircle, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { bibleBooks } from '../data/bibleBooks';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -12,6 +12,7 @@ type NavigationProps = {
   onOpenAIChat: () => void;
   onOpenSermons: () => void;
   onOpenProfile: () => void;
+  onOpenSearch: () => void;
 };
 
 export function Navigation({
@@ -21,6 +22,7 @@ export function Navigation({
   onOpenAIChat,
   onOpenSermons,
   onOpenProfile,
+  onOpenSearch,
 }: NavigationProps) {
   const [showBookPicker, setShowBookPicker] = useState(false);
   const [showChapterPicker, setShowChapterPicker] = useState(false);
@@ -84,6 +86,14 @@ export function Navigation({
           >
             <MessageCircle size={20} />
             <span className="font-medium">AI Chat</span>
+          </button>
+
+          <button
+            onClick={onOpenSearch}
+            className="flex flex-shrink-0 items-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 text-[#2c1810] rounded-lg hover:bg-[#c49a5c]/10 transition-colors"
+          >
+            <Search size={18} />
+            <span className="font-medium">Search</span>
           </button>
 
           <div className="relative flex-shrink-0">
@@ -180,6 +190,16 @@ export function Navigation({
               {currentChapterHasSermons && <span className="w-2 h-2 rounded-full bg-[#c49a5c]" />}
               <ChevronDown size={16} />
             </span>
+          </button>
+        </div>
+
+        <div className="sm:hidden mt-3">
+          <button
+            onClick={onOpenSearch}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-[#c49a5c]/30 rounded-xl text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
+          >
+            <Search size={18} />
+            <span className="font-medium">Search Bible</span>
           </button>
         </div>
       </div>

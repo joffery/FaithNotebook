@@ -8,6 +8,7 @@ import { AccountSetupPrompt } from './components/AccountSetupPrompt';
 import { ProfileSettingsModal } from './components/ProfileSettingsModal';
 import { MobileTabBar } from './components/MobileTabBar';
 import { MyNotesPanel } from './components/MyNotesPanel';
+import { BibleSearchModal } from './components/BibleSearchModal';
 import { useAuth } from './context/AuthContext';
 import { isSupabaseConfigured } from './lib/supabase';
 
@@ -45,6 +46,7 @@ function App() {
   const [showAccountSetupPrompt, setShowAccountSetupPrompt] = useState(false);
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showMyNotes, setShowMyNotes] = useState(false);
+  const [showBibleSearch, setShowBibleSearch] = useState(false);
   const [selectedVerseFromApp, setSelectedVerseFromApp] = useState<number | null>(null);
 
   useEffect(() => {
@@ -110,6 +112,7 @@ function App() {
         onOpenAIChat={() => setShowAIChat(true)}
         onOpenSermons={() => setShowSermons(true)}
         onOpenProfile={() => setShowProfileSettings(true)}
+        onOpenSearch={() => setShowBibleSearch(true)}
       />
 
       <main className="py-8 px-6 pb-28 sm:pb-8">
@@ -152,6 +155,22 @@ function App() {
             setCurrentBook(book);
             setCurrentChapter(chapter);
             setSelectedVerseFromApp(verse);
+            setShowMyNotes(false);
+          }}
+        />
+      )}
+
+      {showBibleSearch && (
+        <BibleSearchModal
+          onClose={() => setShowBibleSearch(false)}
+          onSelectResult={(book, chapter, verse) => {
+            setCurrentBook(book);
+            setCurrentChapter(chapter);
+            setSelectedVerseFromApp(verse ?? null);
+            setShowBibleSearch(false);
+            setShowAIChat(false);
+            setShowSermons(false);
+            setShowProfileSettings(false);
             setShowMyNotes(false);
           }}
         />

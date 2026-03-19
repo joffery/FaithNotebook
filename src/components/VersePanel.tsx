@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { X, Heart, Lock, Unlock, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Heart, Lock, Unlock, ThumbsUp, ThumbsDown, Copy, Check } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { getBibleChapter, ensureBibleChapter } from '../data/bibleText';
 import { parseVerseReference } from '../utils/verseParser';
 import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -100,6 +101,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [currentDisplayName, setCurrentDisplayName] = useState<string>('You');
   const [expandedSermonIds, setExpandedSermonIds] = useState<Set<string>>(new Set());
   const [sermonFeedbackById, setSermonFeedbackById] = useState<Record<string, 'helpful' | 'not_relevant'>>({});
+  const [verseText, setVerseText] = useState('');
+  const [copiedVerse, setCopiedVerse] = useState(false);
+  const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const verseRef = `${book} ${chapter}:${verse}`;
 
@@ -127,6 +131,28 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       )
     );
   }, [sermonGroups]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadVerseText = async () => {
+      let chapterData = getBibleChapter(book, chapter);
+      if (!chapterData) {
+        chapterData = await ensureBibleChapter(book, chapter, false);
+      }
+
+      if (!mounted) return;
+
+      const matchedVerse = chapterData?.verses.find((item) => item.verse === verse);
+      setVerseText(matchedVerse?.text || '');
+    };
+
+    void loadVerseText();
+
+    return () => {
+      mounted = false;
+    };
+  }, [book, chapter, verse]);
 
   const loadCurrentDisplayName = async () => {
     if (!user) return;
@@ -673,6 +699,44 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     }
   };
 
+  const toggleSermonExpanded = (sermonId: string, trigger?: HTMLButtonElement | null) => {
+    const willOpen = !expandedSermonIds.has(sermonId);
+    trigger?.blur();
+
+    setExpandedSermonIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sermonId)) {
+        next.delete(sermonId);
+      } else {
+        next.add(sermonId);
+      }
+      return next;
+    });
+
+    if (willOpen) {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          sermonCardRefs.current[sermonId]?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          });
+        });
+      });
+    }
+  };
+
+  const handleCopyScripture = async () => {
+    const textToCopy = verseText ? `${verseRef} — ${verseText}` : verseRef;
+
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopiedVerse(true);
+      window.setTimeout(() => setCopiedVerse(false), 1800);
+    } catch (error) {
+      console.error('Failed to copy scripture:', error);
+    }
+  };
+
   const exactMatches = sermonGroups.filter((group) => group.matchType === 'exact');
   const broaderMatches = sermonGroups.filter((group) => group.matchType === 'broader');
 
@@ -708,6 +772,27 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
+          <div className="mb-6 rounded-xl border border-[#c49a5c]/18 bg-white/65 px-4 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45 mb-2">
+                  Scripture
+                </p>
+                <p className="text-lg font-serif leading-relaxed text-[#2c1810]">
+                  {verseText || verseRef}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyScripture}
+                className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg border border-[#c49a5c]/20 bg-white px-3 py-2 text-xs font-medium text-[#2c1810]/75 hover:bg-[#c49a5c]/10 hover:text-[#2c1810] transition-colors"
+              >
+                {copiedVerse ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedVerse ? 'Copied' : 'Copy Scripture'}</span>
+              </button>
+            </div>
+          </div>
+
           {activeTab === 'sermons' && (
             <div className="space-y-6">
               {sermonGroups.length === 0 ? (
@@ -848,19 +933,15 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     const sermonDate = formatSermonDate(group.youtubePublishedAt);
 
     return (
-      <div key={group.sermonId} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
+      <div
+        key={group.sermonId}
+        ref={(node) => {
+          sermonCardRefs.current[group.sermonId] = node;
+        }}
+        className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden scroll-mt-4"
+      >
         <button
-          onClick={() =>
-            setExpandedSermonIds((prev) => {
-              const next = new Set(prev);
-              if (next.has(group.sermonId)) {
-                next.delete(group.sermonId);
-              } else {
-                next.add(group.sermonId);
-              }
-              return next;
-            })
-          }
+          onClick={(e) => toggleSermonExpanded(group.sermonId, e.currentTarget)}
           className="w-full text-left p-4"
         >
           <h4 className="font-semibold text-[#2c1810] mb-1">{group.title}</h4>

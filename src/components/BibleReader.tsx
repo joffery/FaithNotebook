@@ -74,26 +74,24 @@ export function BibleReader({ book, chapter, selectedVerseFromApp = null, onSele
           {translationLabel}
         </p>
 
-        <div className="space-y-4">
+        <div className="space-y-1 sm:space-y-2">
           {chapterData.verses.map((v) => (
             <div
               key={v.verse}
               onClick={() => setSelectedVerse(v.verse)}
-              className="group cursor-pointer hover:bg-white/40 rounded-lg p-4 transition-all duration-200"
+              className="group cursor-pointer rounded-md px-2 py-2 sm:px-3 sm:py-2.5 hover:bg-white/35 transition-colors"
             >
-              <div className="flex items-start gap-3">
-                <div className="relative flex-shrink-0">
-                  <span className="inline-flex items-center justify-center w-8 h-8 text-sm font-semibold text-[#c49a5c] group-hover:text-[#2c1810] transition-colors">
+              <p className="text-[1.38rem] sm:text-[1.48rem] leading-[1.95] text-[#2c1810] font-serif">
+                <span className="relative inline-flex items-center mr-2 align-baseline">
+                  <span className="text-sm font-semibold text-[#c49a5c] group-hover:text-[#2c1810] transition-colors">
                     {v.verse}
                   </span>
                   {versesWithSermons.has(v.verse) && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#c49a5c] rounded-full shadow-sm" />
+                    <span className="absolute -top-1 -right-2 h-2 w-2 rounded-full bg-[#c49a5c] shadow-sm" />
                   )}
-                </div>
-                <p className="text-lg leading-relaxed text-[#2c1810] font-serif flex-1">
-                  {v.text}
-                </p>
-              </div>
+                </span>
+                <span>{v.text}</span>
+              </p>
             </div>
           ))}
         </div>

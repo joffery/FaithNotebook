@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { ensureBibleChapter } from '../data/bibleText';
@@ -89,6 +89,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
+  const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
     if (!expandedId) return;
@@ -192,8 +193,21 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
     );
   });
 
-  const toggleExpand = (id: string) => {
+  const toggleExpand = (id: string, trigger?: HTMLButtonElement | null) => {
+    const willOpen = expandedId !== id;
+    trigger?.blur();
     setExpandedId(prev => (prev === id ? null : id));
+
+    if (willOpen) {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          sermonCardRefs.current[id]?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          });
+        });
+      });
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -285,10 +299,16 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                   const summaryText = sermon.summary?.trim() || sermon.transcript_preview?.trim() || '';
 
                   return (
-                    <div key={sermon.id} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
+                    <div
+                      key={sermon.id}
+                      ref={(node) => {
+                        sermonCardRefs.current[sermon.id] = node;
+                      }}
+                      className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden scroll-mt-4"
+                    >
                       <button
                         className="w-full text-left p-4 flex items-start justify-between gap-3"
-                        onClick={() => toggleExpand(sermon.id)}
+                        onClick={(e) => toggleExpand(sermon.id, e.currentTarget)}
                       >
                         <div className="flex-1 min-w-0">
                           <h4 className="font-semibold text-[#2c1810] leading-snug">{sermon.title}</h4>
