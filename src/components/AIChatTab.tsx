@@ -28,8 +28,29 @@ const SUGGESTED_QUESTIONS = [
   'How do sermons explain discipleship?',
 ];
 
+const AI_CHAT_SESSION_KEY = 'faith-notebook-ai-chat-session';
+
+const loadMessagesFromSession = (): Message[] => {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const raw = window.sessionStorage.getItem(AI_CHAT_SESSION_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((item): item is Message =>
+      item &&
+      (item.role === 'user' || item.role === 'assistant') &&
+      typeof item.content === 'string'
+    );
+  } catch {
+    return [];
+  }
+};
+
 export function AIChatTab({ onClose }: AIChatTabProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => loadMessagesFromSession());
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
@@ -42,6 +63,21 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      if (messages.length === 0) {
+        window.sessionStorage.removeItem(AI_CHAT_SESSION_KEY);
+        return;
+      }
+
+      window.sessionStorage.setItem(AI_CHAT_SESSION_KEY, JSON.stringify(messages));
+    } catch {
+      // Ignore storage failures and keep chat working.
+    }
+  }, [messages]);
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;

@@ -8,6 +8,7 @@ import { formatSermonDate, formatSermonMonth, getPrimarySermonDate, sortSermonsN
 
 type SermonsPanelProps = {
   onClose: () => void;
+  onOpenScripture?: (book: string, chapter: number, verse: number) => void;
 };
 
 type VerseInsight = {
@@ -81,7 +82,34 @@ const buildVisiblePages = (current: number, total: number) => {
   return [1, current - 1, current, current + 1, total];
 };
 
-export function SermonsPanel({ onClose }: SermonsPanelProps) {
+const getSermonScriptureRefs = (sermon: Sermon) => {
+  const verseRefs = parseSermonVerseRefs(sermon.verses);
+  const insightRefs = parseVerseInsights(sermon.verse_insights)
+    .map((insight) => insight.verse)
+    .filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0);
+
+  return [...new Set([...insightRefs, ...verseRefs])];
+};
+
+const getPrimaryScriptureTarget = (sermon: Sermon) => {
+  const refs = getSermonScriptureRefs(sermon);
+  for (const ref of refs) {
+    const parsed = parseVerseReference(ref);
+    if (parsed.length > 0) {
+      const first = parsed[0];
+      return {
+        ref,
+        book: first.book,
+        chapter: first.chapter,
+        verse: first.verse,
+      };
+    }
+  }
+
+  return null;
+};
+
+export function SermonsPanel({ onClose, onOpenScripture }: SermonsPanelProps) {
   const [sermons, setSermons] = useState<Sermon[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -231,9 +259,9 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50">
-      <div className="bg-[#faf8f4] w-full max-w-2xl rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-[#c49a5c]/20">
-          <h3 className="text-xl font-serif text-[#2c1810]">Sermons</h3>
+      <div className="bg-[#faf8f4] w-full max-w-2xl rounded-t-2xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-4 sm:p-6 border-b border-[#c49a5c]/20">
+          <h3 className="text-lg sm:text-xl font-serif text-[#2c1810]">Sermons</h3>
           <button
             onClick={onClose}
             className="text-[#2c1810]/60 hover:text-[#2c1810] transition-colors"
@@ -242,15 +270,15 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
           </button>
         </div>
 
-        <div className="p-4 border-b border-[#c49a5c]/20 space-y-3">
+        <div className="px-3 py-3 sm:p-4 border-b border-[#c49a5c]/20 space-y-3">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#2c1810]/40" />
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search title, speaker, church, tag, or scripture…"
-              className="w-full pl-9 pr-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
+              placeholder="Search title, speaker, church, topic, or scripture…"
+              className="w-full pl-9 pr-4 py-2.5 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
             />
           </div>
 
@@ -271,13 +299,13 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
           </div>
 
           {!loading && filtered.length > 0 && (
-            <p className="text-sm text-[#2c1810]/60">
+            <p className="text-xs sm:text-sm text-[#2c1810]/60">
               Showing {pageStart}-{pageEnd} of {filtered.length} sermons
             </p>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="flex-1 overflow-y-auto px-3 py-3 sm:p-4 space-y-2">
           {loading ? (
             <p className="text-center text-[#2c1810]/60 py-8">Loading sermons…</p>
           ) : filtered.length === 0 ? (
@@ -285,7 +313,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
           ) : (
             paginatedGroups.map((group) => (
               <div key={group.label} className="space-y-2">
-                <div className="sticky top-0 z-10 -mx-1 px-1 py-1 bg-[#faf8f4]/95 backdrop-blur-sm">
+                <div className="md:sticky md:top-0 z-10 -mx-1 px-1 py-1 bg-[#faf8f4]/95 backdrop-blur-sm">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#2c1810]/45">
                     {group.label}
                   </p>
@@ -295,6 +323,8 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                   const isOpen = expandedId === sermon.id;
                   const verseInsights = parseVerseInsights(sermon.verse_insights);
                   const tags = parseTags(sermon.tags);
+                  const scriptureRefs = getSermonScriptureRefs(sermon);
+                  const primaryScriptureTarget = getPrimaryScriptureTarget(sermon);
                   const sermonDate = formatSermonDate(getPrimarySermonDate(sermon));
                   const summaryText = sermon.summary?.trim() || sermon.transcript_preview?.trim() || '';
 
@@ -307,18 +337,18 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                       className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden scroll-mt-4"
                     >
                       <button
-                        className="w-full text-left p-4 flex items-start justify-between gap-3"
+                        className="w-full text-left px-3 py-3 sm:p-4 flex items-start justify-between gap-3"
                         onClick={(e) => toggleExpand(sermon.id, e.currentTarget)}
                       >
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-semibold text-[#2c1810] leading-snug">{sermon.title}</h4>
-                          <div className="flex items-center gap-2 text-sm text-[#2c1810]/70 mt-1">
+                          <h4 className="font-semibold text-[#2c1810] leading-snug text-[15px] sm:text-base">{sermon.title}</h4>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-[#2c1810]/70 mt-1">
                             {sermon.speaker && <span>{sermon.speaker}</span>}
                             {sermon.speaker && sermon.church && <span>•</span>}
                             {sermon.church && <span>{sermon.church}</span>}
                           </div>
                           {sermonDate && (
-                            <p className="text-xs text-[#2c1810]/50 mt-1">{sermonDate}</p>
+                            <p className="text-xs text-[#2c1810]/50 mt-0.5">{sermonDate}</p>
                           )}
                         </div>
                         {isOpen ? (
@@ -329,9 +359,74 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                       </button>
 
                       {isOpen && (
-                        <div className="px-4 pb-4 space-y-4 border-t border-[#c49a5c]/10 pt-3">
+                        <div className="px-3 pb-3 sm:px-4 sm:pb-4 space-y-3 border-t border-[#c49a5c]/10 pt-3">
+                          <div className="flex flex-wrap gap-2">
+                            {sermon.youtube_url && (
+                              <a
+                                href={sermon.youtube_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center justify-center rounded-lg bg-[#c49a5c] px-3 py-2 text-sm font-medium text-white hover:bg-[#b38a4d] transition-colors"
+                              >
+                                Watch Full Sermon
+                              </a>
+                            )}
+
+                            {primaryScriptureTarget && onOpenScripture && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onOpenScripture(
+                                    primaryScriptureTarget.book,
+                                    primaryScriptureTarget.chapter,
+                                    primaryScriptureTarget.verse
+                                  );
+                                  onClose();
+                                }}
+                                className="inline-flex items-center justify-center rounded-lg border border-[#c49a5c]/30 bg-white px-3 py-2 text-sm font-medium text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
+                              >
+                                Open Scripture
+                              </button>
+                            )}
+                          </div>
+
                           {summaryText && (
                             <p className="text-sm text-[#2c1810] leading-relaxed">{summaryText}</p>
+                          )}
+
+                          {scriptureRefs.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-2">
+                                Scripture Path
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {scriptureRefs.slice(0, 6).map((ref) => {
+                                  const parsed = parseVerseReference(ref);
+                                  const first = parsed[0];
+                                  const isOpenable = !!first && !!onOpenScripture;
+
+                                  return (
+                                    <button
+                                      key={ref}
+                                      type="button"
+                                      disabled={!isOpenable}
+                                      onClick={() => {
+                                        if (!first || !onOpenScripture) return;
+                                        onOpenScripture(first.book, first.chapter, first.verse);
+                                        onClose();
+                                      }}
+                                      className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                                        isOpenable
+                                          ? 'bg-[#c49a5c]/10 text-[#c49a5c] hover:bg-[#c49a5c]/18'
+                                          : 'bg-[#2c1810]/5 text-[#2c1810]/55'
+                                      }`}
+                                    >
+                                      {ref}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           )}
 
                           {verseInsights.length > 0 && (
@@ -366,16 +461,6 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                             </div>
                           )}
 
-                          {sermon.youtube_url && (
-                            <a
-                              href={sermon.youtube_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-block text-xs text-[#c49a5c] hover:underline"
-                            >
-                              ▶ Watch on YouTube
-                            </a>
-                          )}
                         </div>
                       )}
                     </div>
@@ -387,11 +472,11 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
         </div>
 
         {!loading && filtered.length > PAGE_SIZE && (
-          <div className="border-t border-[#c49a5c]/20 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="border-t border-[#c49a5c]/20 px-3 py-3 sm:px-4 flex items-center justify-between gap-3">
             <p className="text-sm text-[#2c1810]/60">
               Page {currentPage} of {totalPages}
             </p>
-            <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="hidden sm:flex items-center gap-2 flex-wrap justify-end">
               <button
                 onClick={() => setPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
@@ -421,6 +506,22 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                   </div>
                 );
               })}
+              <button
+                onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 text-sm rounded-lg bg-white border border-[#c49a5c]/30 text-[#2c1810] disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+            <div className="flex sm:hidden items-center gap-2">
+              <button
+                onClick={() => setPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-sm rounded-lg bg-white border border-[#c49a5c]/30 text-[#2c1810] disabled:opacity-40"
+              >
+                Prev
+              </button>
               <button
                 onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}

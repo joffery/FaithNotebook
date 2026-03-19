@@ -50,8 +50,9 @@ export function Navigation({
   }, []);
 
   return (
-    <div className="bg-white/60 border-b border-[#c49a5c]/20 py-4 px-6 sticky top-0 backdrop-blur-sm z-40">
-      <div className="max-w-6xl mx-auto space-y-4">
+    <>
+      <div className="bg-white/60 border-b border-[#c49a5c]/20 py-4 px-6 sticky top-0 backdrop-blur-sm z-40">
+        <div className="max-w-6xl mx-auto space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <Book className="text-[#c49a5c] flex-shrink-0" size={24} />
@@ -202,10 +203,51 @@ export function Navigation({
             <span className="font-medium">Search Bible</span>
           </button>
         </div>
+        </div>
       </div>
 
+      {showChapterPicker && (
+        <div className="sm:hidden fixed inset-0 z-[90] bg-[#faf8f4] overflow-y-auto">
+          <div className="sticky top-0 bg-[#faf8f4]/95 backdrop-blur-sm border-b border-[#c49a5c]/20 px-4 py-4 flex items-center justify-between">
+            <button
+              onClick={() => setShowChapterPicker(false)}
+              className="text-[#2c1810] text-lg"
+            >
+              Cancel
+            </button>
+            <h2 className="text-xl font-serif text-[#2c1810]">{currentBook}</h2>
+            <div className="w-12" />
+          </div>
+
+          <div className="px-4 py-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45 mb-3">Choose a Chapter</p>
+            <div className="grid grid-cols-4 gap-3">
+              {chapters.map((ch) => (
+                <button
+                  key={ch}
+                  onClick={() => {
+                    onNavigate(currentBook, ch);
+                    setShowChapterPicker(false);
+                  }}
+                  className={`relative rounded-xl border px-3 py-4 text-lg transition-colors ${
+                    ch === currentChapter
+                      ? 'border-[#c49a5c] bg-[#c49a5c]/16 text-[#2c1810] font-semibold'
+                      : 'border-[#c49a5c]/20 bg-white text-[#2c1810]'
+                  }`}
+                >
+                  {ch}
+                  {hasChapterSermons(sermonReferenceIndex, currentBook, ch) && (
+                    <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#c49a5c]" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showBookPicker && (
-        <div className="sm:hidden fixed inset-0 z-[70] bg-[#faf8f4] overflow-y-auto">
+        <div className="sm:hidden fixed inset-0 z-[90] bg-[#faf8f4] overflow-y-auto">
           <div className="sticky top-0 bg-[#faf8f4]/95 backdrop-blur-sm border-b border-[#c49a5c]/20 px-4 py-4 flex items-center justify-between">
             <button
               onClick={() => setShowBookPicker(false)}
@@ -217,7 +259,7 @@ export function Navigation({
             <div className="w-12" />
           </div>
 
-          <div className="px-4 py-5 space-y-6">
+          <div className="px-4 py-5 pb-28 space-y-6">
             <section>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45 mb-3">Old Testament</p>
               <div className="grid grid-cols-2 gap-3">
@@ -274,46 +316,6 @@ export function Navigation({
           </div>
         </div>
       )}
-
-      {showChapterPicker && (
-        <div className="sm:hidden fixed inset-0 z-[70] bg-[#faf8f4] overflow-y-auto">
-          <div className="sticky top-0 bg-[#faf8f4]/95 backdrop-blur-sm border-b border-[#c49a5c]/20 px-4 py-4 flex items-center justify-between">
-            <button
-              onClick={() => setShowChapterPicker(false)}
-              className="text-[#2c1810] text-lg"
-            >
-              Cancel
-            </button>
-            <h2 className="text-xl font-serif text-[#2c1810]">{currentBook}</h2>
-            <div className="w-12" />
-          </div>
-
-          <div className="px-4 py-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45 mb-3">Choose a Chapter</p>
-            <div className="grid grid-cols-4 gap-3">
-              {chapters.map((ch) => (
-                <button
-                  key={ch}
-                  onClick={() => {
-                    onNavigate(currentBook, ch);
-                    setShowChapterPicker(false);
-                  }}
-                  className={`relative rounded-xl border px-3 py-4 text-lg transition-colors ${
-                    ch === currentChapter
-                      ? 'border-[#c49a5c] bg-[#c49a5c]/16 text-[#2c1810] font-semibold'
-                      : 'border-[#c49a5c]/20 bg-white text-[#2c1810]'
-                  }`}
-                >
-                  {ch}
-                  {hasChapterSermons(sermonReferenceIndex, currentBook, ch) && (
-                    <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#c49a5c]" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

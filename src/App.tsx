@@ -131,7 +131,18 @@ function App() {
       )}
 
       {showSermons && (
-        <SermonsPanel onClose={() => setShowSermons(false)} />
+        <SermonsPanel
+          onClose={() => setShowSermons(false)}
+          onOpenScripture={(book, chapter, verse) => {
+            setCurrentBook(book);
+            setCurrentChapter(chapter);
+            setSelectedVerseFromApp(verse);
+            setShowSermons(false);
+            setShowAIChat(false);
+            setShowProfileSettings(false);
+            setShowMyNotes(false);
+          }}
+        />
       )}
 
       {showAccountSetupPrompt && (

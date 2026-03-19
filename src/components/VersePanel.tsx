@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Heart, Lock, Unlock, ThumbsUp, ThumbsDown, Copy, Check } from 'lucide-react';
+import { X, Heart, Lock, Unlock, ThumbsUp, ThumbsDown, Copy, Check, Trash2 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { getBibleChapter, ensureBibleChapter } from '../data/bibleText';
@@ -96,6 +96,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [communityNotes, setCommunityNotes] = useState<SharedNote[]>([]);
   const [sermonGroups, setSermonGroups] = useState<SermonGroup[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [likePendingIds, setLikePendingIds] = useState<Set<string>>(new Set());
   const [currentDisplayName, setCurrentDisplayName] = useState<string>('You');
@@ -675,6 +676,66 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     }
   };
 
+  const deleteMyNote = async () => {
+    if (!user || !noteId) return;
+    if (typeof window !== 'undefined' && !window.confirm('Delete this note? This will also remove it from shared notes.')) {
+      return;
+    }
+
+    setDeleting(true);
+    setSaveError(null);
+
+    try {
+      const { data: sharedRows, error: sharedLookupError } = await supabase
+        .from('shared_notes')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('book', book)
+        .eq('chapter', chapter)
+        .eq('verse', verse);
+
+      if (sharedLookupError) throw sharedLookupError;
+
+      const sharedIds = (sharedRows || []).map((row: { id: string }) => row.id);
+
+      if (sharedIds.length > 0) {
+        const { error: deleteLikesError } = await supabase
+          .from('note_likes')
+          .delete()
+          .in('note_id', sharedIds);
+
+        if (deleteLikesError && !String(deleteLikesError.message || '').toLowerCase().includes('note_likes')) {
+          throw deleteLikesError;
+        }
+
+        const { error: deleteSharedError } = await supabase
+          .from('shared_notes')
+          .delete()
+          .in('id', sharedIds);
+
+        if (deleteSharedError) throw deleteSharedError;
+      }
+
+      const { error: deleteNoteError } = await supabase
+        .from('notes')
+        .delete()
+        .eq('id', noteId)
+        .eq('user_id', user.id);
+
+      if (deleteNoteError) throw deleteNoteError;
+
+      setMyNote('');
+      setNoteId(null);
+      setIsPublic(false);
+      await loadCommunityNotes();
+    } catch (error) {
+      console.error('Error deleting note:', error);
+      setSaveError(error instanceof Error ? error.message : 'Failed to delete note');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const submitSermonFeedback = async (group: SermonGroup, isHelpful: boolean) => {
     setSermonFeedbackById((prev) => ({
       ...prev,
@@ -884,8 +945,8 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                   Keep it private, or share it so other disciples can be encouraged by what you learned from this verse.
                 </p>
               </div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={togglePublic}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${
@@ -902,14 +963,26 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                   {/* explicit save button to avoid loss when user refreshes before blur */}
                   <button
                     onClick={() => { void saveMyNote(); }}
-                    disabled={saving}
-                    className="ml-4 px-3 py-1.5 bg-[#c49a5c] text-white rounded-lg text-sm disabled:opacity-50"
+                    disabled={saving || deleting}
+                    className="sm:ml-4 px-3 py-1.5 bg-[#c49a5c] text-white rounded-lg text-sm disabled:opacity-50"
                   >
                     {saving ? 'Saving…' : 'Save'}
                   </button>
+                  {noteId && (
+                    <button
+                      onClick={() => { void deleteMyNote(); }}
+                      disabled={saving || deleting}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-red-200 bg-white text-red-600 text-sm hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 size={15} />
+                      <span>{deleting ? 'Deleting…' : 'Delete'}</span>
+                    </button>
+                  )}
                 </div>
-                {saving && <p className="text-sm text-[#c49a5c]">Saving...</p>}
-                {!saving && myNote && !saveError && <p className="text-sm text-[#2c1810]/60">Saved</p>}
+                {(saving || deleting) && (
+                  <p className="text-sm text-[#c49a5c]">{deleting ? 'Deleting…' : 'Saving...'}</p>
+                )}
+                {!saving && !deleting && myNote && !saveError && <p className="text-sm text-[#2c1810]/60">Saved</p>}
               </div>
               {saveError && (
                 <p className="text-sm text-red-500 mb-3">{saveError}</p>
@@ -918,6 +991,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                 value={myNote}
                 onChange={(e) => setMyNote(e.target.value)}
                 onBlur={() => { void saveMyNote(); }}
+                disabled={deleting}
                 placeholder="Write what stands out to you, what you want to obey, or what you want to remember from this verse..."
                 className="w-full h-64 p-4 bg-white/60 border border-[#c49a5c]/20 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50 font-serif leading-relaxed resize-none"
               />
