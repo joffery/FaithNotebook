@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Send, Loader2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Send, Loader2, X, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { VersePanel } from './VersePanel';
@@ -26,7 +26,13 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [versePanelRef, setVersePanelRef] = useState<{ book: string; chapter: number; verse: number } | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, loading]);
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -78,6 +84,18 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     }
   };
 
+  const handleCopy = async (content: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageIndex(index);
+      window.setTimeout(() => {
+        setCopiedMessageIndex((current) => (current === index ? null : current));
+      }, 1800);
+    } catch (error) {
+      console.error('Failed to copy AI response:', error);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-gradient-to-b from-[#f5e6d3] to-[#e8d4ba] rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
@@ -118,6 +136,16 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
                 >
                   {message.role === 'assistant' ? (
                     <>
+                      <div className="flex items-center justify-end mb-2">
+                        <button
+                          onClick={() => handleCopy(message.content, idx)}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810] transition-colors"
+                          aria-label="Copy answer"
+                        >
+                          {copiedMessageIndex === idx ? <Check size={14} /> : <Copy size={14} />}
+                          <span>{copiedMessageIndex === idx ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
                       <div className="leading-relaxed prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-strong:text-[#2c1810] prose-headings:text-[#2c1810]">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {message.content}
@@ -162,6 +190,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
               </div>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         <div className="p-4 border-t border-[#c49a5c]/20 flex gap-2">

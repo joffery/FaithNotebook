@@ -1,44 +1,51 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Book } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export function AuthForm() {
   const { signIn, signUp } = useAuth();
+  const [mode, setMode] = useState<'sign-in' | 'create-account'>('sign-in');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Single username/password form: if username exists we attempt sign in; if not, we sign up + sign in
+  useEffect(() => {
+    const savedUsername = localStorage.getItem('lastUsername');
+    if (savedUsername) {
+      setUsername(savedUsername);
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      // Try signing in first
-      const { error: signInError } = await signIn(username, password);
-      if (!signInError) {
-        // signed in
-        setLoading(false);
-        return;
+      const cleanUsername = username.trim();
+
+      if (mode === 'sign-in') {
+        const { error: signInError } = await signIn(cleanUsername, password);
+        if (signInError) {
+          setError(signInError.message || 'Could not sign in');
+          return;
+        }
+      } else {
+        const { error: signUpError } = await signUp(cleanUsername, password);
+        if (signUpError) {
+          setError(signUpError.message || 'Could not create account');
+          return;
+        }
+
+        const { error: finalSignInError } = await signIn(cleanUsername, password);
+        if (finalSignInError) {
+          setError(finalSignInError.message || 'Sign in after sign up failed');
+          return;
+        }
       }
 
-      // If sign-in failed, attempt to sign up (this covers new usernames)
-      const { error: signUpError } = await signUp(username, password);
-
-      if (signUpError) {
-        // likely wrong password for existing user or other problem
-        setError(signUpError.message || 'Authentication failed');
-        setLoading(false);
-        return;
-      }
-
-      // After sign up, try sign in to establish session
-      const { error: finalSignInError } = await signIn(username, password);
-      if (finalSignInError) {
-        setError(finalSignInError.message || 'Sign in after sign up failed');
-      }
+      localStorage.setItem('lastUsername', cleanUsername);
     } catch (err: any) {
       setError(err?.message || 'An error occurred');
     } finally {
@@ -60,6 +67,31 @@ export function AuthForm() {
         </div>
 
         <div className="bg-white/60 border border-[#c49a5c]/20 rounded-lg p-8 shadow-lg">
+          <div className="flex rounded-lg bg-[#f3eadf] p-1 mb-5">
+            <button
+              type="button"
+              onClick={() => { setMode('sign-in'); setError(''); }}
+              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                mode === 'sign-in'
+                  ? 'bg-white text-[#2c1810] shadow-sm'
+                  : 'text-[#2c1810]/60'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('create-account'); setError(''); }}
+              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                mode === 'create-account'
+                  ? 'bg-white text-[#2c1810] shadow-sm'
+                  : 'text-[#2c1810]/60'
+              }`}
+            >
+              Create Account
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-[#2c1810] mb-2">
@@ -72,9 +104,15 @@ export function AuthForm() {
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 minLength={3}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 className="w-full px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
-                placeholder="Choose a username"
+                placeholder={mode === 'sign-in' ? 'Enter your username' : 'Choose a username'}
               />
+              <p className="text-xs text-[#2c1810]/60 mt-1">
+                Use the same username every time to keep your notes and history.
+              </p>
             </div>
 
             <div>
@@ -91,7 +129,9 @@ export function AuthForm() {
                 className="w-full px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
                 placeholder="••••••••"
               />
-              <p className="text-xs text-[#2c1810]/60 mt-1">At least 6 characters</p>
+              <p className="text-xs text-[#2c1810]/60 mt-1">
+                {mode === 'create-account' ? 'At least 6 characters' : 'Enter the password you used before'}
+              </p>
             </div>
 
             {error && (
@@ -108,17 +148,24 @@ export function AuthForm() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  Signing in...
+                  {mode === 'sign-in' ? 'Signing in...' : 'Creating account...'}
                 </span>
               ) : (
-                <span>Continue</span>
+                <span>{mode === 'sign-in' ? 'Continue' : 'Create Account'}</span>
               )}
             </button>
           </form>
 
-          <p className="text-xs text-center text-[#2c1810]/60 mt-4">
-            If the username is new, an account will be created automatically. No email required.
-          </p>
+          <div className="mt-4 space-y-2 text-xs text-center text-[#2c1810]/60">
+            <p>
+              {mode === 'sign-in'
+                ? 'Sign back in with your same username to keep everything connected.'
+                : 'Account setup is simple and does not require email verification.'}
+            </p>
+            <p>
+              If you forget your password, ask us to reset it for now. We are keeping login simple during testing.
+            </p>
+          </div>
         </div>
       </div>
     </div>
