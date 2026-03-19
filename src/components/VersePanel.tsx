@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Heart, Lock, Unlock } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { parseVerseReference, getRandomCommunityName } from '../utils/verseParser';
-import sermonsJson from '../data/sermons_processed.json';
+import { getRandomCommunityName } from '../utils/verseParser';
 
 type VersePanelProps = {
   book: string;

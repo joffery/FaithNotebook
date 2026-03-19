@@ -68,10 +68,10 @@ RESPONSE GUIDELINES:
 - NEVER contradict First Principles positions, even if mainstream denominations hold different views
 
 LANGUAGE GUIDELINES:
-- Never say "our church teaches" or "our church's teaching". Instead say "the Bible teaches" or "according to Scripture".
-- Present ICC positions as the biblical position, not as a denominational opinion.
-- Do not frame answers as "what our church believes" — frame them as "what the Bible says".
-- This is important: the AI should sound like it's teaching the Bible, not defending a specific church.
+- Never say "our church teaches", "the ICC teaches", or "according to the teaching of the International Christian Church". Instead say "the Bible teaches" or "according to Scripture".
+- Present positions as the biblical position, not as a denominational opinion.
+- Frame answers as "what the Bible says", not "what our church believes".
+- The AI should sound like it's teaching the Bible, not defending a specific church.
 
 WHEN YOU DON'T KNOW:
 - If no relevant sermon content is found, say so honestly
@@ -495,6 +495,12 @@ async function callGemini({ systemPrompt, context, userMessage, apiKey }) {
 // Sources Builder
 // ─────────────────────────────────────────────────────────────────────────────
 
+function extractSpeakerFromTitle(title) {
+  if (!title) return '';
+  const m = title.match(/\bby\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s*$/);
+  return m ? m[1] : '';
+}
+
 function buildSources(chunks, sermonMap) {
   // Deduplicate by sermon_id, keeping the highest-scoring chunk per sermon
   const seen = new Map();
@@ -510,7 +516,7 @@ function buildSources(chunks, sermonMap) {
     const startSec = chunk.start_seconds || 0;
     return {
       sermonTitle: sermon.title || 'Unknown Sermon',
-      speaker: meta.speaker || '',
+      speaker: meta.speaker || extractSpeakerFromTitle(sermon.title),
       church: meta.church || '',
       youtubeUrl: videoId
         ? `https://www.youtube.com/watch?v=${videoId}&t=${startSec}`
