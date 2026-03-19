@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Book, ChevronDown, MessageCircle } from 'lucide-react';
 import { bibleBooks } from '../data/bibleBooks';
-import { hasSermonInBook, hasSermonInChapter, getFirstSermonChapterForBook } from '../data/sermonIndex';
 
 type NavigationProps = {
   currentBook: string;
@@ -64,19 +63,14 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
                     <button
                       key={book.name}
                       onClick={() => {
-                        onNavigate(book.name, getFirstSermonChapterForBook(book.name) ?? 1);
+                        onNavigate(book.name, 1);
                         setShowBookPicker(false);
                       }}
                       className={`block w-full text-left px-3 py-2 rounded hover:bg-[#c49a5c]/10 transition-colors ${
                         book.name === currentBook ? 'bg-[#c49a5c]/20 font-semibold' : ''
                       }`}
                     >
-                      <span className="flex items-center justify-between">
-                        <span>{book.name}</span>
-                        {hasSermonInBook(book.name) && (
-                          <span className="w-2 h-2 rounded-full bg-[#c49a5c]" />
-                        )}
-                      </span>
+                      {book.name}
                     </button>
                   ))}
                 </div>
@@ -107,12 +101,7 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
                         ch === currentChapter ? 'bg-[#c49a5c]/20 font-semibold' : ''
                       }`}
                     >
-                      <span className="inline-flex items-center gap-1">
-                        <span>{ch}</span>
-                        {hasSermonInChapter(currentBook, ch) && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#c49a5c]" />
-                        )}
-                      </span>
+                      {ch}
                     </button>
                   ))}
                 </div>

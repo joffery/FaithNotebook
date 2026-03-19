@@ -3,14 +3,13 @@ import { Navigation } from './components/Navigation';
 import { BibleReader } from './components/BibleReader';
 import { AuthForm } from './components/AuthForm';
 import { AIChatTab } from './components/AIChatTab';
+import { SermonsPanel } from './components/SermonsPanel';
 import { useAuth } from './context/AuthContext';
 import { isSupabaseConfigured } from './lib/supabase';
-import { getFirstSermonLocation } from './data/sermonIndex';
 
 function App() {
   console.log('App rendering');
   const { user, loading } = useAuth();
-  const firstSermonLocation = getFirstSermonLocation();
 
   useEffect(() => {
     console.log('App mounted, user=', user);
@@ -19,20 +18,11 @@ function App() {
       if (!seen) setShowIntro(true);
     }
   }, [user]);
-  const [currentBook, setCurrentBook] = useState(firstSermonLocation?.book ?? 'Matthew');
-  const [currentChapter, setCurrentChapter] = useState(firstSermonLocation?.chapter ?? 6);
+  const [currentBook, setCurrentBook] = useState('Matthew');
+  const [currentChapter, setCurrentChapter] = useState(1);
   const [showAIChat, setShowAIChat] = useState(false);
-  const [aiChatInitialView, setAiChatInitialView] = useState<'chat' | 'sermons'>('chat');
+  const [showSermons, setShowSermons] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
-  const [hasAppliedSermonStart, setHasAppliedSermonStart] = useState(false);
-
-  useEffect(() => {
-    if (user && !hasAppliedSermonStart && firstSermonLocation) {
-      setCurrentBook(firstSermonLocation.book);
-      setCurrentChapter(firstSermonLocation.chapter);
-      setHasAppliedSermonStart(true);
-    }
-  }, [user, hasAppliedSermonStart, firstSermonLocation]);
 
   const handleNavigate = (book: string, chapter: number) => {
     setCurrentBook(book);
@@ -70,8 +60,8 @@ function App() {
         currentBook={currentBook}
         currentChapter={currentChapter}
         onNavigate={handleNavigate}
-        onOpenAIChat={() => { setAiChatInitialView('chat'); setShowAIChat(true); }}
-        onOpenSermons={() => { setAiChatInitialView('sermons'); setShowAIChat(true); }}
+        onOpenAIChat={() => setShowAIChat(true)}
+        onOpenSermons={() => setShowSermons(true)}
       />
 
       <main className="py-8 px-6">
@@ -80,9 +70,12 @@ function App() {
 
       {showAIChat && (
         <AIChatTab
-          initialView={aiChatInitialView}
           onClose={() => setShowAIChat(false)}
         />
+      )}
+
+      {showSermons && (
+        <SermonsPanel onClose={() => setShowSermons(false)} />
       )}
 
       {showIntro && (

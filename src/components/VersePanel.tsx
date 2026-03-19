@@ -106,7 +106,18 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
     let rows: any[] = exactData || [];
 
-    // Fallback: case-insensitive text search for verses mentioned in content
+    // Fallback 1: search for any chunk mentioning this book+chapter (e.g. "Genesis 1:")
+    if (rows.length === 0) {
+      const chapterPrefix = `${book} ${chapter}:`;
+      const { data: chapterData } = await supabase
+        .from('sermon_chunks')
+        .select('id, sermon_id, content, verse_references, start_seconds, sermons(title, speaker, church, video_id)')
+        .ilike('content', `%${chapterPrefix}%`)
+        .limit(10);
+      rows = chapterData || [];
+    }
+
+    // Fallback 2: exact verse text search in content
     if (rows.length === 0) {
       const { data: ftsData } = await supabase
         .from('sermon_chunks')
