@@ -136,14 +136,12 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
     let { data, error } = await supabase
       .from('sermons')
-      .select(fieldsWithPublishedAt)
-      .limit(200);
+      .select(fieldsWithPublishedAt);
 
     if (error && error.message?.toLowerCase().includes('youtube_published_at')) {
       const fallback = await supabase
         .from('sermons')
-        .select(baseFields)
-        .limit(200);
+        .select(baseFields);
       data = fallback.data;
       error = fallback.error;
     }

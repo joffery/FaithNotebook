@@ -25,6 +25,7 @@ type Sermon = {
   youtube_published_at?: string | null;
   processed_at: string;
   summary?: string;
+  transcript_preview?: string;
   verses?: unknown;
   verse_insights?: VerseInsight[];
   tags?: string[];
@@ -133,13 +134,12 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
     if (!isSupabaseConfigured) return;
     setLoading(true);
 
-    const baseFields = 'id, title, speaker, church, region, youtube_url, processed_at, summary, verses, verse_insights, tags';
+    const baseFields = 'id, title, speaker, church, region, youtube_url, processed_at, summary, transcript_preview, verses, verse_insights, tags';
     const fieldsWithPublishedAt = `${baseFields}, youtube_published_at`;
 
     let query = supabase
       .from('sermons')
-      .select(fieldsWithPublishedAt)
-      .limit(200);
+      .select(fieldsWithPublishedAt);
 
     if (region) {
       query = query.eq('region', region);
@@ -150,8 +150,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
     if (error && error.message?.toLowerCase().includes('youtube_published_at')) {
       let fallbackQuery = supabase
         .from('sermons')
-        .select(baseFields)
-        .limit(200);
+        .select(baseFields);
 
       if (region) {
         fallbackQuery = fallbackQuery.eq('region', region);
@@ -283,6 +282,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                   const verseInsights = parseVerseInsights(sermon.verse_insights);
                   const tags = parseTags(sermon.tags);
                   const sermonDate = formatSermonDate(getPrimarySermonDate(sermon));
+                  const summaryText = sermon.summary?.trim() || sermon.transcript_preview?.trim() || '';
 
                   return (
                     <div key={sermon.id} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
@@ -310,8 +310,8 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
 
                       {isOpen && (
                         <div className="px-4 pb-4 space-y-4 border-t border-[#c49a5c]/10 pt-3">
-                          {sermon.summary && (
-                            <p className="text-sm text-[#2c1810] leading-relaxed">{sermon.summary}</p>
+                          {summaryText && (
+                            <p className="text-sm text-[#2c1810] leading-relaxed">{summaryText}</p>
                           )}
 
                           {verseInsights.length > 0 && (

@@ -94,8 +94,7 @@ export async function getSermonReferenceIndex(): Promise<SermonReferenceIndex> {
     const index = emptyIndex();
     const { data, error } = await supabase
       .from('sermons')
-      .select('verses, verse_insights')
-      .limit(500);
+      .select('verses, verse_insights');
 
     if (error) {
       console.error('Error loading sermon reference index:', error);
