@@ -59,23 +59,16 @@ const parseVerseInsights = (value: unknown): { verse: string; insight: string }[
   return [];
 };
 
-const parseVerseRefs = (value: unknown): string[] => {
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string');
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return [];
-    try {
-      const parsed = JSON.parse(trimmed);
-      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
+const normalizeVerseReference = (value: string) =>
+  value
+    .replace(/[–—]/g, '-')
+    .replace(/\s*:\s*/g, ':')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 const matchesVerseReference = (candidate: string, book: string, chapter: number, verse: number) => {
-  const parsed = parseVerseReference(candidate);
+  const parsed = parseVerseReference(normalizeVerseReference(candidate));
   return parsed.some((item) => item.book === book && item.chapter === chapter && item.verse === verse);
 };
 
@@ -175,14 +168,10 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
     const matchedRows = sortedRows.filter((row: any) => {
       const vis = parseVerseInsights(row.verse_insights);
-      const refs = parseVerseRefs(row.verses);
-      const hasExactRef = refs.some((ref) => matchesVerseReference(ref, book, chapter, verse));
-      const hasChapterRef = refs.includes(chapterRef);
-      const hasChapterVerseRef = refs.some((ref) => ref.startsWith(chapterPrefix));
       const hasExactInsight = vis.some((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
       const hasChapterInsight = vis.some((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
 
-      return hasExactRef || hasChapterRef || hasChapterVerseRef || hasExactInsight || hasChapterInsight;
+      return hasExactInsight || hasChapterInsight;
     });
 
     console.log('VersePanel sermon matched data:', matchedRows);
@@ -190,19 +179,15 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     const groups = matchedRows
       .map((row: any): SermonGroup | null => {
         const vis = parseVerseInsights(row.verse_insights);
-        const refs = parseVerseRefs(row.verses);
         const exact = vis.find((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
         const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
-        const exactRef = refs.find((ref) => matchesVerseReference(ref, book, chapter, verse)) || null;
-        const broaderRef = refs.find((ref) => ref === chapterRef || ref.startsWith(chapterPrefix)) || null;
-        const hasExactRef = !!exactRef;
         const hasExactInsight = !!exact;
         const insightText = exact?.insight || chMatch?.insight || null;
         const summary = trimToSentences(row.summary || '', 3);
-        const matchType: SermonGroup['matchType'] = hasExactInsight || hasExactRef ? 'exact' : 'broader';
-        const matchedReference = exact?.verse || chMatch?.verse || exactRef || broaderRef;
+        const matchType: SermonGroup['matchType'] = hasExactInsight ? 'exact' : 'broader';
+        const matchedReference = exact?.verse || chMatch?.verse || null;
 
-        if (!summary && !insightText) {
+        if (!insightText) {
           return null;
         }
 
