@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Mail, ShieldCheck } from 'lucide-react';
+import { CHURCH_OPTIONS } from '../constants/churches';
 import { useAuth } from '../context/AuthContext';
 
 type AccountSetupPromptProps = {
@@ -12,6 +13,7 @@ export function AccountSetupPrompt({ onClose }: AccountSetupPromptProps) {
     profile?.display_name || profile?.username || ''
   );
   const [email, setEmail] = useState(profile?.recovery_email || '');
+  const [churchAffiliation, setChurchAffiliation] = useState(profile?.church_affiliation || '');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -23,6 +25,7 @@ export function AccountSetupPrompt({ onClose }: AccountSetupPromptProps) {
     const { error: saveError } = await completeAccountSetup({
       recoveryEmail: email,
       displayName,
+      churchAffiliation,
     });
 
     if (saveError) {
@@ -94,6 +97,29 @@ export function AccountSetupPrompt({ onClose }: AccountSetupPromptProps) {
             </p>
           </div>
 
+          <div>
+            <label htmlFor="setup-church-affiliation" className="block text-sm font-medium text-[#2c1810] mb-2">
+              Church
+            </label>
+            <select
+              id="setup-church-affiliation"
+              value={churchAffiliation}
+              onChange={(e) => setChurchAffiliation(e.target.value)}
+              disabled={saving || profileLoading}
+              className="w-full rounded-lg border border-[#c49a5c]/25 bg-white px-4 py-3 text-[#2c1810] focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/45 disabled:opacity-60"
+            >
+              <option value="">Select your church</option>
+              {CHURCH_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-[#2c1810]/55">
+              This helps us show the app in a clearer church-community context.
+            </p>
+          </div>
+
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
               <p className="text-sm text-red-700">{error}</p>
@@ -114,7 +140,7 @@ export function AccountSetupPrompt({ onClose }: AccountSetupPromptProps) {
               disabled={!email.trim() || !displayName.trim() || saving || profileLoading}
               className="px-4 py-2 rounded-lg bg-[#c49a5c] text-white text-sm font-medium hover:bg-[#b38a4d] transition-colors disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Save Email'}
+              {saving ? 'Saving...' : 'Save Account Info'}
             </button>
           </div>
         </form>

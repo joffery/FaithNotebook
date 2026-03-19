@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Book } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { CHURCH_OPTIONS } from '../constants/churches';
 
 const toFriendlyAuthError = (message?: string) => {
   const text = message?.toLowerCase() || '';
@@ -25,6 +26,7 @@ export function AuthForm() {
   const [mode, setMode] = useState<'sign-in' | 'create-account'>('sign-in');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [churchAffiliation, setChurchAffiliation] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -50,7 +52,11 @@ export function AuthForm() {
           return;
         }
       } else {
-        const { error: signUpError } = await signUp(cleanUsername, password);
+        const { error: signUpError } = await signUp({
+          username: cleanUsername,
+          password,
+          churchAffiliation,
+        });
         if (signUpError) {
           setError(toFriendlyAuthError(signUpError.message));
           return;
@@ -152,6 +158,31 @@ export function AuthForm() {
               </p>
             </div>
 
+            {mode === 'create-account' && (
+              <div>
+                <label htmlFor="church-affiliation" className="block text-sm font-medium text-[#2c1810] mb-2">
+                  Church
+                </label>
+                <select
+                  id="church-affiliation"
+                  value={churchAffiliation}
+                  onChange={(e) => setChurchAffiliation(e.target.value)}
+                  required
+                  className="w-full px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
+                >
+                  <option value="">Select your church</option>
+                  {CHURCH_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-[#2c1810]/60 mt-1">
+                  This helps us keep the app simple and relevant for Florida churches.
+                </p>
+              </div>
+            )}
+
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                 <p className="text-sm text-red-800">{error}</p>
@@ -178,11 +209,12 @@ export function AuthForm() {
             <p>
               {mode === 'sign-in'
                 ? 'Sign back in with your same username to keep everything connected.'
-                : 'Account setup is simple and does not require email verification.'}
+                : 'Create your account with the church you are part of, then finish setup after you sign in.'}
             </p>
             <p>
               If you forget your password, ask us to reset it for now. We are keeping login simple during testing.
             </p>
+            <p className="pt-1 text-[#8c6430]">Powered by Tampa Bay ICC</p>
           </div>
         </div>
       </div>

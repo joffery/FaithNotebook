@@ -3,6 +3,16 @@ import { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { Database, supabase } from '../lib/supabase';
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+type SignUpInput = {
+  username: string;
+  password: string;
+  churchAffiliation?: string | null;
+};
+type ProfileDetailsInput = {
+  displayName: string;
+  recoveryEmail: string;
+  churchAffiliation?: string | null;
+};
 
 const LEGACY_EMAIL_SUFFIX = '@faith.local';
 
@@ -22,13 +32,24 @@ const getRememberedUsername = () => {
   return saved?.trim() ? saved.trim() : null;
 };
 
+const normalizeChurchAffiliation = (value?: string | null) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+};
+
+const isMissingChurchAffiliationColumnError = (error: unknown) => {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error || '').toLowerCase();
+  return message.includes('church_affiliation');
+};
+
 const isMissingProfileUpgradeColumnError = (error: unknown) => {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error || '').toLowerCase();
   return (
     message.includes('username') ||
     message.includes('recovery_email') ||
     message.includes('account_setup_completed_at') ||
-    message.includes('avatar_url')
+    message.includes('avatar_url') ||
+    message.includes('church_affiliation')
   );
 };
 
@@ -39,8 +60,10 @@ interface AuthContextType {
   profileLoading: boolean;
   needsAccountSetup: boolean;
   signIn: (username: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (username: string, password: string) => Promise<{ error: Error | null }>;
-  completeAccountSetup: (input: { recoveryEmail: string; displayName: string }) => Promise<{ error: Error | null }>;
+  signUp: (input: SignUpInput) => Promise<{ error: Error | null }>;
+  completeAccountSetup: (input: ProfileDetailsInput) => Promise<{ error: Error | null }>;
+  updateProfileDetails: (input: ProfileDetailsInput) => Promise<{ error: Error | null }>;
+  updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -53,6 +76,8 @@ const AuthContext = createContext<AuthContextType>({
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
   completeAccountSetup: async () => ({ error: null }),
+  updateProfileDetails: async () => ({ error: null }),
+  updatePassword: async () => ({ error: null }),
   signOut: async () => {},
 });
 
@@ -85,8 +110,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data as ProfileRow | null;
   };
 
-  const ensureProfile = async (authUser: User, usernameHint?: string | null) => {
+  const ensureProfile = async (
+    authUser: User,
+    usernameHint?: string | null,
+    churchAffiliationHint?: string | null
+  ) => {
     const fallbackUsername = usernameHint?.trim() || getLegacyUsernameFromEmail(authUser.email) || getRememberedUsername();
+    const fallbackChurchAffiliation = normalizeChurchAffiliation(churchAffiliationHint);
     const existingProfile = await loadProfile(authUser.id);
 
     if (!existingProfile) {
@@ -95,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: authUser.id,
         display_name: fallbackUsername || 'Bible Reader',
         username: fallbackUsername,
+        church_affiliation: fallbackChurchAffiliation,
         created_at: now,
         updated_at: now,
       });
@@ -123,6 +154,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     if (!existingProfile.display_name?.trim() && fallbackUsername) {
       updates.display_name = fallbackUsername;
+    }
+    if (!existingProfile.church_affiliation && fallbackChurchAffiliation) {
+      updates.church_affiliation = fallbackChurchAffiliation;
     }
 
     if (Object.keys(updates).length === 0) {
@@ -217,8 +251,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  const signUp = async (username: string, password: string) => {
+  const signUp = async ({ username, password, churchAffiliation }: SignUpInput) => {
     const cleanUsername = username.trim();
+    const normalizedChurchAffiliation = normalizeChurchAffiliation(churchAffiliation);
     const { data, error } = await supabase.auth.signUp({
       email: toEmail(cleanUsername),
       password,
@@ -232,6 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: data.user.id,
           display_name: cleanUsername,
           username: cleanUsername,
+          church_affiliation: normalizedChurchAffiliation,
           updated_at: now,
         });
 
@@ -256,19 +292,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  const completeAccountSetup = async ({
+  const saveProfileDetails = async ({
     recoveryEmail,
     displayName,
-  }: {
-    recoveryEmail: string;
-    displayName: string;
-  }) => {
+    churchAffiliation,
+  }: ProfileDetailsInput) => {
     if (!user) {
       return { error: new Error('Please sign in again and try one more time.') };
     }
 
     const normalizedEmail = recoveryEmail.trim().toLowerCase();
     const normalizedDisplayName = displayName.trim();
+    const normalizedChurchAffiliation = normalizeChurchAffiliation(churchAffiliation);
     if (!isValidRecoveryEmail(normalizedEmail)) {
       return { error: new Error('Please enter a valid email address.') };
     }
@@ -281,7 +316,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const ensuredProfile = profile || await ensureProfile(user);
       const now = new Date().toISOString();
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('profiles')
         .update({
           username: ensuredProfile?.username || getLegacyUsernameFromEmail(user.email) || getRememberedUsername(),
@@ -289,11 +324,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           recovery_email: normalizedEmail,
           recovery_email_added_at: ensuredProfile?.recovery_email_added_at || now,
           account_setup_completed_at: now,
+          church_affiliation: normalizedChurchAffiliation,
           updated_at: now,
         })
         .eq('id', user.id)
         .select('*')
         .single();
+
+      if (error && isMissingChurchAffiliationColumnError(error)) {
+        const fallback = await supabase
+          .from('profiles')
+          .update({
+            username: ensuredProfile?.username || getLegacyUsernameFromEmail(user.email) || getRememberedUsername(),
+            display_name: normalizedDisplayName,
+            recovery_email: normalizedEmail,
+            recovery_email_added_at: ensuredProfile?.recovery_email_added_at || now,
+            account_setup_completed_at: now,
+            updated_at: now,
+          })
+          .eq('id', user.id)
+          .select('*')
+          .single();
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) {
         console.error('Failed to complete account setup:', error);
@@ -311,6 +365,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setProfileLoading(false);
     }
+  };
+
+  const completeAccountSetup = async (input: ProfileDetailsInput) => saveProfileDetails(input);
+
+  const updateProfileDetails = async (input: ProfileDetailsInput) => saveProfileDetails(input);
+
+  const updatePassword = async (newPassword: string) => {
+    const normalizedPassword = newPassword.trim();
+    if (normalizedPassword.length < 6) {
+      return { error: new Error('Please use at least 6 characters for your password.') };
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: normalizedPassword });
+    if (error) {
+      console.error('Failed to update password:', error);
+      return { error: new Error('We could not update your password just now. Please try again.') };
+    }
+
+    return { error: null };
   };
 
   const signOut = async () => {
@@ -334,6 +407,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         signUp,
         completeAccountSetup,
+        updateProfileDetails,
+        updatePassword,
         signOut,
       }}
     >

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Book, ChevronDown, MessageCircle } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { bibleBooks } from '../data/bibleBooks';
+import { ProfileAvatar } from './ProfileAvatar';
 import { getSermonReferenceIndex, hasBookSermons, hasChapterSermons, SermonReferenceIndex } from '../utils/sermonReferences';
 
 type NavigationProps = {
@@ -9,17 +11,27 @@ type NavigationProps = {
   onNavigate: (book: string, chapter: number) => void;
   onOpenAIChat: () => void;
   onOpenSermons: () => void;
+  onOpenProfile: () => void;
 };
 
-export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAIChat, onOpenSermons }: NavigationProps) {
+export function Navigation({
+  currentBook,
+  currentChapter,
+  onNavigate,
+  onOpenAIChat,
+  onOpenSermons,
+  onOpenProfile,
+}: NavigationProps) {
   const [showBookPicker, setShowBookPicker] = useState(false);
   const [showChapterPicker, setShowChapterPicker] = useState(false);
   const [sermonReferenceIndex, setSermonReferenceIndex] = useState<SermonReferenceIndex | null>(null);
+  const { profile } = useAuth();
 
   const currentBookData = bibleBooks.find(b => b.name === currentBook);
   const chapters = currentBookData ? Array.from({ length: currentBookData.chapters }, (_, i) => i + 1) : [];
   const currentBookHasSermons = hasBookSermons(sermonReferenceIndex, currentBook);
   const currentChapterHasSermons = hasChapterSermons(sermonReferenceIndex, currentBook, currentChapter);
+  const profileName = profile?.display_name || profile?.username || 'Profile';
 
   useEffect(() => {
     let mounted = true;
@@ -134,6 +146,19 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
               </div>
             )}
           </div>
+
+          <button
+            onClick={onOpenProfile}
+            className="flex flex-shrink-0 items-center gap-2 px-3 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
+            aria-label="Open profile settings"
+          >
+            <ProfileAvatar
+              displayName={profileName}
+              avatarUrl={profile?.avatar_url}
+              size="sm"
+            />
+            <span className="hidden sm:inline font-medium">{profileName}</span>
+          </button>
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { AuthForm } from './components/AuthForm';
 import { AIChatTab } from './components/AIChatTab';
 import { SermonsPanel } from './components/SermonsPanel';
 import { AccountSetupPrompt } from './components/AccountSetupPrompt';
+import { ProfileSettingsModal } from './components/ProfileSettingsModal';
 import { useAuth } from './context/AuthContext';
 import { isSupabaseConfigured } from './lib/supabase';
 
@@ -14,17 +15,13 @@ function App() {
 
   useEffect(() => {
     console.log('App mounted, user=', user);
-    if (user) {
-      const seen = localStorage.getItem('seenIntro');
-      if (!seen) setShowIntro(true);
-    }
   }, [user]);
   const [currentBook, setCurrentBook] = useState('Matthew');
   const [currentChapter, setCurrentChapter] = useState(1);
   const [showAIChat, setShowAIChat] = useState(false);
   const [showSermons, setShowSermons] = useState(false);
-  const [showIntro, setShowIntro] = useState(false);
   const [showAccountSetupPrompt, setShowAccountSetupPrompt] = useState(false);
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
 
   useEffect(() => {
     if (needsAccountSetup) {
@@ -73,6 +70,7 @@ function App() {
         onNavigate={handleNavigate}
         onOpenAIChat={() => setShowAIChat(true)}
         onOpenSermons={() => setShowSermons(true)}
+        onOpenProfile={() => setShowProfileSettings(true)}
       />
 
       <main className="py-8 px-6">
@@ -89,36 +87,12 @@ function App() {
         <SermonsPanel onClose={() => setShowSermons(false)} />
       )}
 
-      {showIntro && !showAccountSetupPrompt && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-lg max-w-md text-center">
-            <h2 className="text-2xl font-serif mb-4">Welcome to Faith Notebook</h2>
-            <div className="mb-4 text-[#2c1810] text-left space-y-3">
-              <p>
-                <strong>1.</strong> Sermons contain all 56 sermons from our YouTube channel. Click any sermon to view its summary, all related verses, and the speaker&apos;s explanations (insights).
-              </p>
-              <p>
-                <strong>2.</strong> You can browse all scriptures, and books/chapters mentioned in sermons are marked. Click a specific verse to see the corresponding sermon insights.
-              </p>
-              <p>
-                <strong>3.</strong> You can add notes to every verse and set each note as private or public. Public notes appear in the community section.
-              </p>
-              <p>
-                <strong>4.</strong> AI Chat generates answers purely based on sermons and notes.
-              </p>
-            </div>
-            <button
-              className="px-4 py-2 bg-[#c49a5c] text-white rounded-lg"
-              onClick={() => { localStorage.setItem('seenIntro', '1'); setShowIntro(false); }}
-            >
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
-
       {showAccountSetupPrompt && (
         <AccountSetupPrompt onClose={() => setShowAccountSetupPrompt(false)} />
+      )}
+
+      {showProfileSettings && (
+        <ProfileSettingsModal onClose={() => setShowProfileSettings(false)} />
       )}
 
       <div className="fixed bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#faf8f4] to-transparent pointer-events-none"></div>

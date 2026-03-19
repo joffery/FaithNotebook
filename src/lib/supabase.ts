@@ -11,8 +11,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
     from: () => ({ select: async () => ({ data: null, error: new Error('Supabase not configured') }) }),
     auth: {
       signInWithPassword: async () => ({ error: new Error('Supabase not configured') }),
-      signUp: async () => ({ error: new Error('Supabase not configured') }),
+      signUp: async () => ({ data: { user: null }, error: new Error('Supabase not configured') }),
       signOut: async () => {},
+      updateUser: async () => ({ error: new Error('Supabase not configured') }),
       getSession: async () => ({ data: { session: null } }),
       onAuthStateChange: () => ({ subscription: { unsubscribe: () => {} } }),
     },
@@ -39,6 +40,7 @@ export type Database = {
           account_setup_completed_at: string | null;
           avatar_url: string | null;
           avatar_updated_at: string | null;
+          church_affiliation: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -52,6 +54,7 @@ export type Database = {
           account_setup_completed_at?: string | null;
           avatar_url?: string | null;
           avatar_updated_at?: string | null;
+          church_affiliation?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -65,6 +68,7 @@ export type Database = {
           account_setup_completed_at?: string | null;
           avatar_url?: string | null;
           avatar_updated_at?: string | null;
+          church_affiliation?: string | null;
           updated_at?: string;
         };
       };
