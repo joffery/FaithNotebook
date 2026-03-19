@@ -39,6 +39,21 @@ const parseVerseInsights = (value: unknown): VerseInsight[] => {
   return [];
 };
 
+const parseTags = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
 const REGIONS = [
   { label: 'All', value: '' },
   { label: 'Tampa Bay', value: 'tampa_bay' },
@@ -142,6 +157,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
             filtered.map(sermon => {
               const isOpen = expandedId === sermon.id;
               const verseInsights = parseVerseInsights(sermon.verse_insights);
+              const tags = parseTags(sermon.tags);
               return (
                 <div key={sermon.id} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
                   <button
@@ -184,9 +200,9 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                         </div>
                       )}
 
-                      {sermon.tags && sermon.tags.length > 0 && (
+                      {tags.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
-                          {sermon.tags.map((tag, i) => (
+                          {tags.map((tag, i) => (
                             <span
                               key={i}
                               className="px-2 py-0.5 bg-[#c49a5c]/10 text-[#c49a5c] text-xs rounded-full"

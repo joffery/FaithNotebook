@@ -106,26 +106,40 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     if (!isSupabaseConfigured) return;
 
     const chapterRef = `${book} ${chapter}`;
-    const escapeArrayValue = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
     console.log('VersePanel sermon query refs:', {
       verseRef,
       chapterRef,
     });
 
-    const { data, error } = await supabase
+    const { data: exactData, error: exactError } = await supabase
       .from('sermons')
       .select('id, title, speaker, church, youtube_url, verse_insights, summary')
-      .or(`verses.cs.{"${escapeArrayValue(verseRef)}"},verses.cs.{"${escapeArrayValue(chapterRef)}"}`)
+      .contains('verses', [verseRef])
       .limit(20);
 
-    if (error) {
-      console.error('VersePanel sermon query error:', error);
+    if (exactError) {
+      console.error('VersePanel sermon exact query error:', exactError);
     }
 
-    console.log('VersePanel sermon query data:', data);
+    console.log('VersePanel sermon exact query data:', exactData);
 
-    const rows: any[] = data || [];
+    let rows: any[] = exactData || [];
+
+    if (rows.length === 0) {
+      const { data: chapterData, error: chapterError } = await supabase
+        .from('sermons')
+        .select('id, title, speaker, church, youtube_url, verse_insights, summary')
+        .filter('verses::text', 'ilike', `%${chapterRef}:%`)
+        .limit(20);
+
+      if (chapterError) {
+        console.error('VersePanel sermon chapter fallback error:', chapterError);
+      }
+
+      console.log('VersePanel sermon chapter fallback data:', chapterData);
+      rows = chapterData || [];
+    }
 
     const chapterPrefix = `${book} ${chapter}:`;
     const groups: SermonGroup[] = (rows || []).map((row: any) => {
