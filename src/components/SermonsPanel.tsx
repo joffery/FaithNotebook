@@ -24,6 +24,21 @@ type Sermon = {
   tags?: string[];
 };
 
+const parseVerseInsights = (value: unknown): VerseInsight[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
 const REGIONS = [
   { label: 'All', value: '' },
   { label: 'Tampa Bay', value: 'tampa_bay' },
@@ -126,6 +141,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
           ) : (
             filtered.map(sermon => {
               const isOpen = expandedId === sermon.id;
+              const verseInsights = parseVerseInsights(sermon.verse_insights);
               return (
                 <div key={sermon.id} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
                   <button
@@ -153,11 +169,11 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                         <p className="text-sm text-[#2c1810] leading-relaxed">{sermon.summary}</p>
                       )}
 
-                      {sermon.verse_insights && sermon.verse_insights.length > 0 && (
+                      {verseInsights.length > 0 && (
                         <div>
                           <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-2">Verse Insights</p>
                           <ul className="space-y-2">
-                            {sermon.verse_insights.map((vi, i) => (
+                            {verseInsights.map((vi, i) => (
                               <li key={i} className="text-sm text-[#2c1810]">
                                 <span className="font-medium text-[#c49a5c]">{vi.verse}</span>
                                 {' — '}

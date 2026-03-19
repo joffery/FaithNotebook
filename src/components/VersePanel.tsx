@@ -39,6 +39,21 @@ function trimToSentences(text: string, max: number): string {
   return sentences.slice(0, max).join(' ').trim();
 }
 
+const parseVerseInsights = (value: unknown): { verse: string; insight: string }[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
 export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'sermons' | 'community' | 'my-notes'>('sermons');
@@ -90,28 +105,31 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const loadSermonChunks = async () => {
     if (!isSupabaseConfigured) return;
 
-    // Primary: sermons whose verses array contains this exact verse ref
-    const { data: exactData } = await supabase
+    const chapterRef = `${book} ${chapter}`;
+    const escapeArrayValue = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+    console.log('VersePanel sermon query refs:', {
+      verseRef,
+      chapterRef,
+    });
+
+    const { data, error } = await supabase
       .from('sermons')
       .select('id, title, speaker, church, youtube_url, verse_insights, summary')
-      .contains('verses', [verseRef])
+      .or(`verses.cs.{"${escapeArrayValue(verseRef)}"},verses.cs.{"${escapeArrayValue(chapterRef)}"}`)
       .limit(20);
 
-    let rows: any[] = exactData || [];
-
-    // Fallback: any sermon whose verses array contains a ref in this book+chapter
-    if (rows.length === 0) {
-      const { data: chapterData } = await supabase
-        .from('sermons')
-        .select('id, title, speaker, church, youtube_url, verse_insights, summary')
-        .filter('verses::text', 'ilike', `%${book} ${chapter}:%`)
-        .limit(10);
-      rows = chapterData || [];
+    if (error) {
+      console.error('VersePanel sermon query error:', error);
     }
+
+    console.log('VersePanel sermon query data:', data);
+
+    const rows: any[] = data || [];
 
     const chapterPrefix = `${book} ${chapter}:`;
     const groups: SermonGroup[] = (rows || []).map((row: any) => {
-      const vis: { verse: string; insight: string }[] = row.verse_insights || [];
+      const vis = parseVerseInsights(row.verse_insights);
       const exact = vis.find((vi: { verse: string }) => vi.verse === verseRef);
       const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
       const insightText = exact?.insight || chMatch?.insight || null;
