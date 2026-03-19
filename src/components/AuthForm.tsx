@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Book } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CHURCH_OPTIONS } from '../constants/churches';
+import { RecoverAccountModal } from './RecoverAccountModal';
 
 const toFriendlyAuthError = (message?: string) => {
   const text = message?.toLowerCase() || '';
@@ -29,6 +30,7 @@ export function AuthForm() {
   const [churchAffiliation, setChurchAffiliation] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
 
   useEffect(() => {
     const savedUsername = localStorage.getItem('lastUsername');
@@ -119,7 +121,7 @@ export function AuthForm() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-[#2c1810] mb-2">
-                Username
+                Sign-In Username
               </label>
               <input
                 id="username"
@@ -135,7 +137,7 @@ export function AuthForm() {
                 placeholder={mode === 'sign-in' ? 'Enter your username' : 'Choose a username'}
               />
               <p className="text-xs text-[#2c1810]/60 mt-1">
-                Use the same username every time to keep your notes and history.
+                This is only for signing in. The name other disciples see can be set after you log in.
               </p>
             </div>
 
@@ -212,12 +214,33 @@ export function AuthForm() {
                 : 'Create your account with the church you are part of, then finish setup after you sign in.'}
             </p>
             <p>
-              If you forget your password, ask us to reset it for now. We are keeping login simple during testing.
+              Add your recovery email after you sign in so this account is ready for safer password recovery.
             </p>
+            {mode === 'sign-in' && (
+              <button
+                type="button"
+                onClick={() => setShowRecoveryModal(true)}
+                className="text-[#8c6430] hover:text-[#6f4f22] underline underline-offset-2"
+              >
+                Forgot password?
+              </button>
+            )}
             <p className="pt-1 text-[#8c6430]">Powered by Tampa Bay ICC</p>
           </div>
         </div>
       </div>
+
+      {showRecoveryModal && (
+        <RecoverAccountModal
+          initialUsername={username}
+          onClose={() => setShowRecoveryModal(false)}
+          onRecovered={(nextPassword) => {
+            setPassword(nextPassword);
+            setShowRecoveryModal(false);
+            setError('');
+          }}
+        />
+      )}
     </div>
   );
 }

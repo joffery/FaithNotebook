@@ -93,7 +93,7 @@ export function AccountSetupPrompt({ onClose }: AccountSetupPromptProps) {
               />
             </div>
             <p className="mt-2 text-xs text-[#2c1810]/55">
-              You will still keep signing in the same way for now. This simply prepares your account for safer recovery later.
+              You will still keep signing in the same way for now. This email will be used for password recovery.
             </p>
           </div>
 

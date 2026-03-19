@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { LockKeyhole, Mail, User, X } from 'lucide-react';
+import { LockKeyhole, Mail, NotebookPen, User, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CHURCH_OPTIONS } from '../constants/churches';
 import { ProfileAvatar } from './ProfileAvatar';
 
 type ProfileSettingsModalProps = {
   onClose: () => void;
+  onOpenMyNotes: () => void;
 };
 
-export function ProfileSettingsModal({ onClose }: ProfileSettingsModalProps) {
+export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettingsModalProps) {
   const {
     profile,
     profileLoading,
@@ -117,13 +118,13 @@ export function ProfileSettingsModal({ onClose }: ProfileSettingsModalProps) {
             <div>
               <h3 className="text-lg font-serif text-[#2c1810]">Profile</h3>
               <p className="text-sm text-[#2c1810]/60 mt-1">
-                This is how other disciples will recognize you in the app.
+                This is how other disciples will recognize you in the app and on shared notes.
               </p>
             </div>
 
             <div>
               <label htmlFor="profile-username" className="block text-sm font-medium text-[#2c1810] mb-2">
-                Username
+                Sign-In Username
               </label>
               <input
                 id="profile-username"
@@ -133,7 +134,7 @@ export function ProfileSettingsModal({ onClose }: ProfileSettingsModalProps) {
                 className="w-full rounded-lg border border-[#c49a5c]/20 bg-[#f6f1e8] px-4 py-3 text-[#2c1810]/65"
               />
               <p className="mt-2 text-xs text-[#2c1810]/55">
-                Keep using this same username when you sign in.
+                Keep using this same username when you sign in. Shared notes use your name, not this username.
               </p>
             </div>
 
@@ -196,7 +197,7 @@ export function ProfileSettingsModal({ onClose }: ProfileSettingsModalProps) {
                 />
               </div>
               <p className="mt-2 text-xs text-[#2c1810]/55">
-                This is for future account recovery. Your sign-in username stays the same.
+                This email is used for password recovery. Your sign-in username stays the same.
               </p>
             </div>
 
@@ -282,6 +283,23 @@ export function ProfileSettingsModal({ onClose }: ProfileSettingsModalProps) {
               {savingPassword ? 'Updating Password...' : 'Update Password'}
             </button>
           </form>
+
+          <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 p-4 space-y-3">
+            <div>
+              <h3 className="text-lg font-serif text-[#2c1810]">My Notes</h3>
+              <p className="text-sm text-[#2c1810]/60 mt-1">
+                Reopen the verses where you already wrote notes.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenMyNotes}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-[#c49a5c]/25 bg-white px-4 py-3 text-sm font-medium text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
+            >
+              <NotebookPen size={16} />
+              <span>Open My Notes</span>
+            </button>
+          </div>
 
           <button
             type="button"

@@ -1,18 +1,21 @@
 import { useState, useEffect } from 'react';
-import { getBibleChapter, ensureBibleChapter, BibleChapter } from '../data/bibleText';
+import { getBibleChapter, ensureBibleChapter, getBibleTranslationLabel, BibleChapter } from '../data/bibleText';
 import { VersePanel } from './VersePanel';
 import { getSermonReferenceIndex, getVerseNumbersForChapter } from '../utils/sermonReferences';
 
 type BibleReaderProps = {
   book: string;
   chapter: number;
+  selectedVerseFromApp?: number | null;
+  onSelectedVerseHandled?: () => void;
 };
 
-export function BibleReader({ book, chapter }: BibleReaderProps) {
+export function BibleReader({ book, chapter, selectedVerseFromApp = null, onSelectedVerseHandled }: BibleReaderProps) {
   const [chapterData, setChapterData] = useState<BibleChapter | null>(null);
   const [loadingChapter, setLoadingChapter] = useState<boolean>(false);
   const [selectedVerse, setSelectedVerse] = useState<number | null>(null);
   const [versesWithSermons, setVersesWithSermons] = useState<Set<number>>(new Set());
+  const translationLabel = getBibleTranslationLabel();
 
   useEffect(() => {
     let mounted = true;
@@ -41,6 +44,12 @@ export function BibleReader({ book, chapter }: BibleReaderProps) {
     return () => { mounted = false; };
   }, [book, chapter]);
 
+  useEffect(() => {
+    if (selectedVerseFromApp === null) return;
+    setSelectedVerse(selectedVerseFromApp);
+    onSelectedVerseHandled?.();
+  }, [selectedVerseFromApp, onSelectedVerseHandled]);
+
   if (!chapterData) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -58,9 +67,12 @@ export function BibleReader({ book, chapter }: BibleReaderProps) {
   return (
     <>
       <div className="max-w-3xl mx-auto">
-        <h2 className="text-3xl font-serif text-[#2c1810] mb-8 text-center">
+        <h2 className="text-3xl font-serif text-[#2c1810] mb-2 text-center">
           {book} {chapter}
         </h2>
+        <p className="text-center text-xs uppercase tracking-[0.18em] text-[#2c1810]/45 mb-8">
+          {translationLabel}
+        </p>
 
         <div className="space-y-4">
           {chapterData.verses.map((v) => (

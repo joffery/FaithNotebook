@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Heart, Lock, Unlock } from 'lucide-react';
+import { X, Heart, Lock, Unlock, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { parseVerseReference } from '../utils/verseParser';
@@ -93,6 +93,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [likePendingIds, setLikePendingIds] = useState<Set<string>>(new Set());
   const [currentDisplayName, setCurrentDisplayName] = useState<string>('You');
   const [expandedSermonIds, setExpandedSermonIds] = useState<Set<string>>(new Set());
+  const [sermonFeedbackById, setSermonFeedbackById] = useState<Record<string, 'helpful' | 'not_relevant'>>({});
 
   const verseRef = `${book} ${chapter}:${verse}`;
 
@@ -643,6 +644,30 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     }
   };
 
+  const submitSermonFeedback = async (group: SermonGroup, isHelpful: boolean) => {
+    setSermonFeedbackById((prev) => ({
+      ...prev,
+      [group.sermonId]: isHelpful ? 'helpful' : 'not_relevant',
+    }));
+
+    try {
+      await fetch('/api/ai-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          surface: 'verse_match',
+          question: verseRef,
+          answer: `${group.title}\n${group.relevantText || group.summary || ''}`.trim(),
+          feedbackKind: isHelpful ? 'match_helpful' : 'match_not_relevant',
+          targetRef: group.matchedReference || verseRef,
+          targetId: group.sermonId,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to save sermon match feedback:', error);
+    }
+  };
+
   const exactMatches = sermonGroups.filter((group) => group.matchType === 'exact');
   const broaderMatches = sermonGroups.filter((group) => group.matchType === 'broader');
 
@@ -866,6 +891,36 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                 ▶ Watch on YouTube
               </a>
             )}
+
+            <div className="pt-1">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#2c1810]/42 mb-2">
+                Was this sermon match useful?
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => submitSermonFeedback(group, true)}
+                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                    sermonFeedbackById[group.sermonId] === 'helpful'
+                      ? 'bg-[#c49a5c]/16 text-[#2c1810]'
+                      : 'text-[#2c1810]/60 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
+                  }`}
+                >
+                  <ThumbsUp size={14} />
+                  <span>Helpful</span>
+                </button>
+                <button
+                  onClick={() => submitSermonFeedback(group, false)}
+                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                    sermonFeedbackById[group.sermonId] === 'not_relevant'
+                      ? 'bg-[#c49a5c]/16 text-[#2c1810]'
+                      : 'text-[#2c1810]/60 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
+                  }`}
+                >
+                  <ThumbsDown size={14} />
+                  <span>Not relevant</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

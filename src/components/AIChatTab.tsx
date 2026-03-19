@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Loader2, X, Copy, Check } from 'lucide-react';
+import { Send, Loader2, X, Copy, Check, ThumbsUp, ThumbsDown, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { VersePanel } from './VersePanel';
@@ -22,11 +22,20 @@ type Message = {
   sources?: Source[];
 };
 
+const SUGGESTED_QUESTIONS = [
+  'Is baptism necessary?',
+  'What does Acts 2 teach about salvation?',
+  'How do sermons explain discipleship?',
+];
+
 export function AIChatTab({ onClose }: AIChatTabProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
+  const [helpfulnessFeedbackByMessageIndex, setHelpfulnessFeedbackByMessageIndex] = useState<Record<number, 'helpful' | 'not_helpful'>>({});
+  const [accuracyFeedbackByMessageIndex, setAccuracyFeedbackByMessageIndex] = useState<Record<number, 'accurate' | 'inaccurate'>>({});
+  const [flaggedMessageIndexes, setFlaggedMessageIndexes] = useState<Record<number, boolean>>({});
   const [versePanelRef, setVersePanelRef] = useState<{ book: string; chapter: number; verse: number } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -77,11 +86,77 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  const sendFeedback = async (payload: {
+    question: string;
+    answer: string;
+    feedbackKind: string;
+  }) => {
+    try {
+      await fetch('/api/ai-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          surface: 'ai_chat',
+          question: payload.question,
+          answer: payload.answer,
+          feedbackKind: payload.feedbackKind,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to save AI feedback:', error);
+    }
+  };
+
+  const getQuestionForMessage = (index: number) =>
+    messages
+      .slice(0, index)
+      .reverse()
+      .find((item) => item.role === 'user')?.content || '';
+
+  const handleHelpfulnessFeedback = async (message: Message, index: number, isHelpful: boolean) => {
+    setHelpfulnessFeedbackByMessageIndex((prev) => ({
+      ...prev,
+      [index]: isHelpful ? 'helpful' : 'not_helpful',
+    }));
+
+    await sendFeedback({
+      question: getQuestionForMessage(index),
+      answer: message.content,
+      feedbackKind: isHelpful ? 'helpful' : 'not_helpful',
+    });
+  };
+
+  const handleAccuracyFeedback = async (message: Message, index: number, isAccurate: boolean) => {
+    setAccuracyFeedbackByMessageIndex((prev) => ({
+      ...prev,
+      [index]: isAccurate ? 'accurate' : 'inaccurate',
+    }));
+
+    await sendFeedback({
+      question: getQuestionForMessage(index),
+      answer: message.content,
+      feedbackKind: isAccurate ? 'accurate' : 'inaccurate',
+    });
+  };
+
+  const handleLooksWrongFeedback = async (message: Message, index: number) => {
+    setFlaggedMessageIndexes((prev) => ({
+      ...prev,
+      [index]: true,
+    }));
+
+    await sendFeedback({
+      question: getQuestionForMessage(index),
+      answer: message.content,
+      feedbackKind: 'looks_wrong',
+    });
   };
 
   const handleCopy = async (content: string, index: number) => {
@@ -97,10 +172,10 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-gradient-to-b from-[#f5e6d3] to-[#e8d4ba] rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-[#c49a5c]/20">
-          <h2 className="text-xl font-serif text-[#2c1810]">AI Bible Study Assistant</h2>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center sm:p-4">
+      <div className="bg-gradient-to-b from-[#f5e6d3] to-[#e8d4ba] w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[90vh] flex flex-col sm:rounded-lg shadow-2xl">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#c49a5c]/20">
+          <h2 className="text-2xl font-serif text-[#2c1810]">AI Bible Study Assistant</h2>
           <button
             onClick={onClose}
             className="p-2 hover:bg-[#c49a5c]/10 rounded-lg transition-colors"
@@ -109,26 +184,32 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-4 p-4">
+        <div className="flex-1 overflow-y-auto space-y-4 p-4 sm:p-5">
           {messages.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-[#2c1810]/60 mb-4">
-                Ask questions about the Bible, sermons, or discipleship
+              <p className="text-[#2c1810]/60 mb-2 text-lg">
+                Ask about the Bible, sermons, or discipleship
               </p>
-              <div className="text-left max-w-md mx-auto space-y-2">
-                <p className="text-[#2c1810]/50 text-sm font-medium">Try asking:</p>
-                <ul className="text-[#2c1810]/40 text-xs space-y-1">
-                  <li>• What does the Bible say about baptism?</li>
-                  <li>• How do sermons explain John 15:1-8?</li>
-                  <li>• What is discipleship according to Scripture?</li>
-                </ul>
+              <p className="text-[#2c1810]/45 text-sm mb-5 max-w-md mx-auto">
+                Start with a simple question and the assistant will answer from Scripture and sermon material.
+              </p>
+              <div className="max-w-lg mx-auto flex flex-wrap justify-center gap-2">
+                {SUGGESTED_QUESTIONS.map((question) => (
+                  <button
+                    key={question}
+                    onClick={() => setInput(question)}
+                    className="rounded-full border border-[#c49a5c]/25 bg-white/65 px-4 py-2 text-sm text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
+                  >
+                    {question}
+                  </button>
+                ))}
               </div>
             </div>
           ) : (
             messages.map((message, idx) => (
               <div key={idx} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-[80%] rounded-lg p-4 ${
+                  className={`max-w-[92%] sm:max-w-[80%] rounded-xl p-4 sm:p-5 ${
                     message.role === 'user'
                       ? 'bg-[#c49a5c]/20 text-[#2c1810]'
                       : 'bg-white/60 text-[#2c1810] border border-[#c49a5c]/20'
@@ -137,14 +218,76 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
                   {message.role === 'assistant' ? (
                     <>
                       <div className="flex items-center justify-end mb-2">
-                        <button
-                          onClick={() => handleCopy(message.content, idx)}
-                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810] transition-colors"
-                          aria-label="Copy answer"
-                        >
-                          {copiedMessageIndex === idx ? <Check size={14} /> : <Copy size={14} />}
-                          <span>{copiedMessageIndex === idx ? 'Copied' : 'Copy'}</span>
-                        </button>
+                        <div className="flex flex-wrap items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleCopy(message.content, idx)}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810] transition-colors"
+                            aria-label="Copy answer"
+                          >
+                            {copiedMessageIndex === idx ? <Check size={14} /> : <Copy size={14} />}
+                            <span>{copiedMessageIndex === idx ? 'Copied' : 'Copy'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleHelpfulnessFeedback(message, idx, true)}
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                              helpfulnessFeedbackByMessageIndex[idx] === 'helpful'
+                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
+                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
+                            }`}
+                            aria-label="Helpful answer"
+                          >
+                            <ThumbsUp size={14} />
+                            <span>Helpful</span>
+                          </button>
+                          <button
+                            onClick={() => handleHelpfulnessFeedback(message, idx, false)}
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                              helpfulnessFeedbackByMessageIndex[idx] === 'not_helpful'
+                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
+                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
+                            }`}
+                            aria-label="Not helpful answer"
+                          >
+                            <ThumbsDown size={14} />
+                            <span>Not helpful</span>
+                          </button>
+                          <button
+                            onClick={() => handleAccuracyFeedback(message, idx, true)}
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                              accuracyFeedbackByMessageIndex[idx] === 'accurate'
+                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
+                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
+                            }`}
+                            aria-label="Accurate answer"
+                          >
+                            <Check size={14} />
+                            <span>Accurate</span>
+                          </button>
+                          <button
+                            onClick={() => handleAccuracyFeedback(message, idx, false)}
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                              accuracyFeedbackByMessageIndex[idx] === 'inaccurate'
+                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
+                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
+                            }`}
+                            aria-label="Not accurate answer"
+                          >
+                            <X size={14} />
+                            <span>Not accurate</span>
+                          </button>
+                          <button
+                            onClick={() => handleLooksWrongFeedback(message, idx)}
+                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                              flaggedMessageIndexes[idx]
+                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
+                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
+                            }`}
+                            aria-label="Something looks wrong"
+                          >
+                            <AlertCircle size={14} />
+                            <span>Looks wrong</span>
+                          </button>
+                        </div>
                       </div>
                       <div className="leading-relaxed prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-strong:text-[#2c1810] prose-headings:text-[#2c1810]">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -193,20 +336,20 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="p-4 border-t border-[#c49a5c]/20 flex gap-2">
+        <div className="p-4 sm:p-5 border-t border-[#c49a5c]/20 flex gap-2 bg-[#f2dfc5]/85 backdrop-blur-sm pb-[max(1rem,env(safe-area-inset-bottom))]">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             placeholder="Ask about the Bible, sermons, or discipleship..."
             disabled={loading}
-            className="flex-1 px-4 py-3 bg-white/60 border border-[#c49a5c]/20 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50 disabled:opacity-50"
+            className="flex-1 min-w-0 px-4 py-3 bg-white/70 border border-[#c49a5c]/20 rounded-xl text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50 disabled:opacity-50"
           />
           <button
             onClick={sendMessage}
             disabled={!input.trim() || loading}
-            className="px-4 py-3 bg-[#c49a5c] text-white rounded-lg hover:bg-[#b38a4d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-3 bg-[#c49a5c] text-white rounded-xl hover:bg-[#b38a4d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
           >
             <Send size={20} />
           </button>

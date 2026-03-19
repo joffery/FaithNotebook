@@ -9,6 +9,109 @@ export type BibleChapter = {
   verses: BibleVerse[];
 };
 
+const BIBLE_TRANSLATION_ID = 'BSB';
+const BIBLE_TRANSLATION_LABEL = 'Berean Standard Bible';
+const CACHE_STORAGE_PREFIX = 'faith-notebook-bible-chapter';
+
+const runtimeBibleCache: Record<string, BibleChapter> = {};
+
+const BOOK_API_CODES: Record<string, string> = {
+  Genesis: 'GEN',
+  Exodus: 'EXO',
+  Leviticus: 'LEV',
+  Numbers: 'NUM',
+  Deuteronomy: 'DEU',
+  Joshua: 'JOS',
+  Judges: 'JDG',
+  Ruth: 'RUT',
+  '1 Samuel': '1SA',
+  '2 Samuel': '2SA',
+  '1 Kings': '1KI',
+  '2 Kings': '2KI',
+  '1 Chronicles': '1CH',
+  '2 Chronicles': '2CH',
+  Ezra: 'EZR',
+  Nehemiah: 'NEH',
+  Esther: 'EST',
+  Job: 'JOB',
+  Psalms: 'PSA',
+  Proverbs: 'PRO',
+  Ecclesiastes: 'ECC',
+  'Song of Solomon': 'SNG',
+  Isaiah: 'ISA',
+  Jeremiah: 'JER',
+  Lamentations: 'LAM',
+  Ezekiel: 'EZK',
+  Daniel: 'DAN',
+  Hosea: 'HOS',
+  Joel: 'JOL',
+  Amos: 'AMO',
+  Obadiah: 'OBA',
+  Jonah: 'JON',
+  Micah: 'MIC',
+  Nahum: 'NAM',
+  Habakkuk: 'HAB',
+  Zephaniah: 'ZEP',
+  Haggai: 'HAG',
+  Zechariah: 'ZEC',
+  Malachi: 'MAL',
+  Matthew: 'MAT',
+  Mark: 'MRK',
+  Luke: 'LUK',
+  John: 'JHN',
+  Acts: 'ACT',
+  Romans: 'ROM',
+  '1 Corinthians': '1CO',
+  '2 Corinthians': '2CO',
+  Galatians: 'GAL',
+  Ephesians: 'EPH',
+  Philippians: 'PHP',
+  Colossians: 'COL',
+  '1 Thessalonians': '1TH',
+  '2 Thessalonians': '2TH',
+  '1 Timothy': '1TI',
+  '2 Timothy': '2TI',
+  Titus: 'TIT',
+  Philemon: 'PHM',
+  Hebrews: 'HEB',
+  James: 'JAS',
+  '1 Peter': '1PE',
+  '2 Peter': '2PE',
+  '1 John': '1JN',
+  '2 John': '2JN',
+  '3 John': '3JN',
+  Jude: 'JUD',
+  Revelation: 'REV',
+};
+
+const getChapterKey = (book: string, chapter: number) => `${book}-${chapter}`;
+
+const readStoredChapter = (key: string): BibleChapter | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(`${CACHE_STORAGE_PREFIX}:${key}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.book || !parsed?.chapter || !Array.isArray(parsed?.verses)) return null;
+    return parsed as BibleChapter;
+  } catch {
+    return null;
+  }
+};
+
+const storeChapter = (key: string, chapterData: BibleChapter) => {
+  runtimeBibleCache[key] = chapterData;
+
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(`${CACHE_STORAGE_PREFIX}:${key}`, JSON.stringify(chapterData));
+  } catch {
+    // Ignore storage failures and keep the in-memory cache.
+  }
+};
+
 export const bibleChapters: Record<string, BibleChapter> = {
   'John-14': {
     book: 'John',
@@ -321,28 +424,62 @@ export const bibleChapters: Record<string, BibleChapter> = {
 };
 
 export function getBibleChapter(book: string, chapter: number): BibleChapter | null {
-  const key = `${book}-${chapter}`;
-  return bibleChapters[key] || null;
+  const key = getChapterKey(book, chapter);
+  return runtimeBibleCache[key] || readStoredChapter(key);
 }
 
-// attempt to fetch a chapter from an external Bible API and cache it locally
+export function getBibleTranslationLabel(): string {
+  return BIBLE_TRANSLATION_LABEL;
+}
+
+const getFallbackBibleChapter = (book: string, chapter: number): BibleChapter | null => {
+  const key = getChapterKey(book, chapter);
+  return bibleChapters[key] || null;
+};
+
+// Prefer a modern translation API, then fall back to previously bundled local text.
 export async function ensureBibleChapter(book: string, chapter: number, forceRefresh: boolean = false): Promise<BibleChapter | null> {
-  const existing = getBibleChapter(book, chapter);
-  if (existing && !forceRefresh) return existing;
+  const key = getChapterKey(book, chapter);
+  const cached = getBibleChapter(book, chapter);
+  const fallback = getFallbackBibleChapter(book, chapter);
+
+  if (cached && !forceRefresh) return cached;
+
+  const bookCode = BOOK_API_CODES[book];
+  if (!bookCode) {
+    return cached || fallback || null;
+  }
 
   try {
-    const encoded = encodeURIComponent(`${book} ${chapter}`);
-    const resp = await fetch(`https://bible-api.com/${encoded}?translation=kjv`);
-    if (!resp.ok) return existing || null;
+    const resp = await fetch(`https://bible.helloao.org/api/${BIBLE_TRANSLATION_ID}/${bookCode}/${chapter}.json`);
+    if (!resp.ok) return cached || fallback || null;
     const data = await resp.json();
-    if (!data.verses || !Array.isArray(data.verses)) return existing || null;
+    if (!Array.isArray(data?.chapter?.content)) return cached || fallback || null;
 
-    const verses = data.verses.map((v: any) => ({ verse: v.verse, text: v.text.trim() }));
+    const verses = data.chapter.content
+      .filter((item: any) => item?.type === 'verse' && Number.isFinite(item?.number))
+      .map((item: any) => ({
+        verse: Number(item.number),
+        text: (Array.isArray(item.content) ? item.content : [])
+          .map((part: any) => {
+            if (typeof part === 'string') return part;
+            if (part?.text) return String(part.text);
+            if (part?.lineBreak) return ' ';
+            return '';
+          })
+          .join('')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      }))
+      .filter((v: BibleVerse) => Number.isFinite(v.verse) && !!v.text);
+
+    if (verses.length === 0) return cached || fallback || null;
+
     const chapterData: BibleChapter = { book, chapter, verses };
-    bibleChapters[`${book}-${chapter}`] = chapterData;
+    storeChapter(key, chapterData);
     return chapterData;
   } catch (err) {
     console.error('Error fetching chapter', book, chapter, err);
-    return existing || null;
+    return cached || fallback || null;
   }
 }
