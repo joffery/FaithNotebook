@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { ensureBibleChapter } from '../data/bibleText';
+import { parseVerseReference } from '../utils/verseParser';
+import { parseSermonVerseRefs } from '../utils/sermonReferences';
+import { sortSermonsNewestFirst } from '../utils/sermonSorting';
 
 type SermonsPanelProps = {
   onClose: () => void;
@@ -18,11 +22,15 @@ type Sermon = {
   church: string;
   region: string;
   youtube_url: string;
+  youtube_published_at?: string | null;
   processed_at: string;
   summary?: string;
+  verses?: unknown;
   verse_insights?: VerseInsight[];
   tags?: string[];
 };
+
+const verseTextPromiseCache = new Map<string, Promise<string | null>>();
 
 const parseVerseInsights = (value: unknown): VerseInsight[] => {
   if (Array.isArray(value)) return value;
@@ -68,6 +76,39 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [search, setSearch] = useState('');
   const [region, setRegion] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!expandedId) return;
+
+    const sermon = sermons.find((item) => item.id === expandedId);
+    if (!sermon) return;
+
+    const insights = parseVerseInsights(sermon.verse_insights);
+    if (insights.length === 0) return;
+
+    let mounted = true;
+
+    Promise.all(
+      insights.map(async (insight) => {
+        const text = await getVerseTextForReference(insight.verse);
+        return [insight.verse, text] as const;
+      })
+    ).then((entries) => {
+      if (!mounted) return;
+
+      setVerseTexts((prev) => ({
+        ...prev,
+        ...Object.fromEntries(
+          entries.filter((entry): entry is readonly [string, string] => typeof entry[1] === 'string' && entry[1].length > 0)
+        ),
+      }));
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [expandedId, sermons]);
 
   useEffect(() => {
     loadSermons();
@@ -77,28 +118,63 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
     if (!isSupabaseConfigured) return;
     setLoading(true);
 
+    const baseFields = 'id, title, speaker, church, region, youtube_url, processed_at, summary, verses, verse_insights, tags';
+    const fieldsWithPublishedAt = `${baseFields}, youtube_published_at`;
+
     let query = supabase
       .from('sermons')
-      .select('id, title, speaker, church, region, youtube_url, processed_at, summary, verse_insights, tags')
-      .order('processed_at', { ascending: false })
+      .select(fieldsWithPublishedAt)
       .limit(200);
 
     if (region) {
       query = query.eq('region', region);
     }
 
-    const { data } = await query;
-    setSermons(data || []);
+    let { data, error } = await query;
+
+    if (error && error.message?.toLowerCase().includes('youtube_published_at')) {
+      let fallbackQuery = supabase
+        .from('sermons')
+        .select(baseFields)
+        .limit(200);
+
+      if (region) {
+        fallbackQuery = fallbackQuery.eq('region', region);
+      }
+
+      const fallback = await fallbackQuery;
+      data = fallback.data;
+      error = fallback.error;
+    }
+
+    if (error) {
+      console.error('Error loading sermons:', error);
+      setSermons([]);
+      setLoading(false);
+      return;
+    }
+
+    setSermons(sortSermonsNewestFirst(data || []));
     setLoading(false);
   };
 
   const filtered = sermons.filter(s => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
+    const verseInsights = parseVerseInsights(s.verse_insights);
+    const tags = parseTags(s.tags);
+    const verseRefs = parseSermonVerseRefs(s.verses);
+
     return (
       s.title?.toLowerCase().includes(q) ||
       s.speaker?.toLowerCase().includes(q) ||
-      s.church?.toLowerCase().includes(q)
+      s.church?.toLowerCase().includes(q) ||
+      tags.some(tag => tag.toLowerCase().includes(q)) ||
+      verseRefs.some(ref => ref.toLowerCase().includes(q)) ||
+      verseInsights.some(vi =>
+        vi.verse?.toLowerCase().includes(q) ||
+        vi.insight?.toLowerCase().includes(q)
+      )
     );
   });
 
@@ -126,7 +202,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search title, speaker, or church…"
+              placeholder="Search title, speaker, church, tag, or scripture…"
               className="w-full pl-9 pr-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
             />
           </div>
@@ -191,9 +267,16 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                           <ul className="space-y-2">
                             {verseInsights.map((vi, i) => (
                               <li key={i} className="text-sm text-[#2c1810]">
-                                <span className="font-medium text-[#c49a5c]">{vi.verse}</span>
-                                {' — '}
-                                {vi.insight}
+                                <p>
+                                  <span className="font-medium text-[#c49a5c]">{vi.verse}</span>
+                                  {' — '}
+                                  {vi.insight}
+                                </p>
+                                {verseTexts[vi.verse] && (
+                                  <p className="mt-1 text-xs leading-relaxed text-[#2c1810]/70 italic">
+                                    {verseTexts[vi.verse]}
+                                  </p>
+                                )}
                               </li>
                             ))}
                           </ul>
@@ -233,4 +316,29 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
       </div>
     </div>
   );
+}
+
+async function getVerseTextForReference(verseRef: string): Promise<string | null> {
+  if (!verseTextPromiseCache.has(verseRef)) {
+    verseTextPromiseCache.set(
+      verseRef,
+      (async () => {
+        const parsed = parseVerseReference(verseRef);
+        if (parsed.length === 0) return null;
+
+        const { book, chapter } = parsed[0];
+        const chapterData = await ensureBibleChapter(book, chapter, false);
+        if (!chapterData) return null;
+
+        const verseMap = new Map(chapterData.verses.map((entry) => [entry.verse, entry.text]));
+        const verseTexts = parsed
+          .map(({ verse }) => verseMap.get(verse))
+          .filter((text): text is string => typeof text === 'string' && text.length > 0);
+
+        return verseTexts.length > 0 ? verseTexts.join(' ') : null;
+      })()
+    );
+  }
+
+  return verseTextPromiseCache.get(verseRef)!;
 }

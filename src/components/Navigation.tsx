@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Book, ChevronDown, MessageCircle } from 'lucide-react';
 import { bibleBooks } from '../data/bibleBooks';
+import { getSermonReferenceIndex, hasBookSermons, hasChapterSermons, SermonReferenceIndex } from '../utils/sermonReferences';
 
 type NavigationProps = {
   currentBook: string;
@@ -13,9 +14,24 @@ type NavigationProps = {
 export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAIChat, onOpenSermons }: NavigationProps) {
   const [showBookPicker, setShowBookPicker] = useState(false);
   const [showChapterPicker, setShowChapterPicker] = useState(false);
+  const [sermonReferenceIndex, setSermonReferenceIndex] = useState<SermonReferenceIndex | null>(null);
 
   const currentBookData = bibleBooks.find(b => b.name === currentBook);
   const chapters = currentBookData ? Array.from({ length: currentBookData.chapters }, (_, i) => i + 1) : [];
+  const currentBookHasSermons = hasBookSermons(sermonReferenceIndex, currentBook);
+  const currentChapterHasSermons = hasChapterSermons(sermonReferenceIndex, currentBook, currentChapter);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getSermonReferenceIndex().then((index) => {
+      if (mounted) setSermonReferenceIndex(index);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <div className="bg-white/60 border-b border-[#c49a5c]/20 py-4 px-6 sticky top-0 backdrop-blur-sm z-40">
@@ -53,6 +69,7 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
               className="flex items-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
             >
               <span className="font-medium">{currentBook}</span>
+              {currentBookHasSermons && <span className="w-2 h-2 rounded-full bg-[#c49a5c]" />}
               <ChevronDown size={16} />
             </button>
 
@@ -70,7 +87,12 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
                         book.name === currentBook ? 'bg-[#c49a5c]/20 font-semibold' : ''
                       }`}
                     >
-                      {book.name}
+                      <span className="flex items-center justify-between gap-3">
+                        <span>{book.name}</span>
+                        {hasBookSermons(sermonReferenceIndex, book.name) && (
+                          <span className="w-2 h-2 rounded-full bg-[#c49a5c] flex-shrink-0" />
+                        )}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -84,6 +106,7 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
               className="flex items-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
             >
               <span className="font-medium">Chapter {currentChapter}</span>
+              {currentChapterHasSermons && <span className="w-2 h-2 rounded-full bg-[#c49a5c]" />}
               <ChevronDown size={16} />
             </button>
 
@@ -97,11 +120,14 @@ export function Navigation({ currentBook, currentChapter, onNavigate, onOpenAICh
                         onNavigate(currentBook, ch);
                         setShowChapterPicker(false);
                       }}
-                      className={`px-3 py-2 rounded hover:bg-[#c49a5c]/10 transition-colors ${
+                      className={`relative px-3 py-2 rounded hover:bg-[#c49a5c]/10 transition-colors ${
                         ch === currentChapter ? 'bg-[#c49a5c]/20 font-semibold' : ''
                       }`}
                     >
                       {ch}
+                      {hasChapterSermons(sermonReferenceIndex, currentBook, ch) && (
+                        <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#c49a5c]" />
+                      )}
                     </button>
                   ))}
                 </div>

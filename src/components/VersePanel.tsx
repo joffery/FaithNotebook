@@ -3,6 +3,7 @@ import { X, Heart, Lock, Unlock } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { getRandomCommunityName } from '../utils/verseParser';
+import { sortSermonsNewestFirst } from '../utils/sermonSorting';
 
 type VersePanelProps = {
   book: string;
@@ -122,17 +123,27 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
     const chapterRef = `${book} ${chapter}`;
     const chapterPrefix = `${book} ${chapter}:`;
+    const baseFields = 'id, title, speaker, church, youtube_url, verse_insights, summary, verses, processed_at';
+    const fieldsWithPublishedAt = `${baseFields}, youtube_published_at`;
 
     console.log('VersePanel sermon query refs:', {
       verseRef,
       chapterRef,
     });
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('sermons')
-      .select('id, title, speaker, church, youtube_url, verse_insights, summary, verses')
-      .order('processed_at', { ascending: false })
+      .select(fieldsWithPublishedAt)
       .limit(200);
+
+    if (error && error.message?.toLowerCase().includes('youtube_published_at')) {
+      const fallback = await supabase
+        .from('sermons')
+        .select(baseFields)
+        .limit(200);
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       console.error('VersePanel sermon query error:', error);
@@ -140,9 +151,11 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       return;
     }
 
-    console.log('VersePanel sermon query data:', data);
+    const sortedRows = sortSermonsNewestFirst(data || []);
 
-    const matchedRows = (data || []).filter((row: any) => {
+    console.log('VersePanel sermon query data:', sortedRows);
+
+    const matchedRows = sortedRows.filter((row: any) => {
       const vis = parseVerseInsights(row.verse_insights);
       const refs = parseVerseRefs(row.verses);
       const hasExactRef = refs.includes(verseRef);
