@@ -11,13 +11,6 @@ type VersePanelProps = {
   onClose: () => void;
 };
 
-type Note = {
-  id: string;
-  content: string;
-  is_public: boolean;
-  updated_at: string;
-};
-
 type SharedNote = {
   id: string;
   user_id: string;
@@ -30,13 +23,27 @@ type SharedNote = {
   is_liked_by_user?: boolean;
 };
 
-type SermonInsight = {
-  verse: string;
-  insight: string;
-  sermonTitle: string;
+type SermonChunk = {
+  content: string;
+  startSeconds: number;
+};
+
+type SermonGroup = {
+  sermonId: string;
+  title: string;
   speaker: string;
   church: string;
+  videoId: string;
+  chunks: SermonChunk[];
 };
+
+function formatTimestamp(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
 export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const { user } = useAuth();
@@ -45,7 +52,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [noteId, setNoteId] = useState<string | null>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [communityNotes, setCommunityNotes] = useState<SharedNote[]>([]);
-  const [sermonInsights, setSermonInsights] = useState<SermonInsight[]>([]);
+  const [sermonGroups, setSermonGroups] = useState<SermonGroup[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [likePendingIds, setLikePendingIds] = useState<Set<string>>(new Set());
@@ -54,7 +61,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const verseRef = `${book} ${chapter}:${verse}`;
 
   useEffect(() => {
-    loadSermonInsights();
+    loadSermonChunks();
     if (user) {
       loadCurrentDisplayName();
       loadMyNote();
@@ -86,60 +93,50 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     setCurrentDisplayName(data?.display_name || fallback);
   };
 
-  const loadSermonInsights = async () => {
-    // first gather insights from the static JSON library
-    const jsonInsights: SermonInsight[] = [];
-    (sermonsJson as any[]).forEach(s => {
-      (s.verse_insights || []).forEach((vi: any) => {
-        const parsed = parseVerseReference(vi.verse);
-        parsed.forEach(p => {
-          if (p.book === book && p.chapter === chapter && p.verse === verse) {
-            jsonInsights.push({
-              verse: vi.verse,
-              insight: vi.insight,
-              sermonTitle: s.title,
-              speaker: s.speaker,
-              church: s.church,
-            });
-          }
-        });
-      });
-    });
+  const loadSermonChunks = async () => {
+    if (!isSupabaseConfigured) return;
 
-    let combined = [...jsonInsights];
+    // Primary: chunks where verse_references array contains this verse
+    const { data: exactData } = await supabase
+      .from('sermon_chunks')
+      .select('id, sermon_id, content, verse_references, start_seconds, sermons(title, speaker, church, video_id)')
+      .contains('verse_references', [verseRef])
+      .order('start_seconds')
+      .limit(20);
 
-    if (isSupabaseConfigured) {
-      const { data } = await supabase
-        .from('sermon_verse_insights')
-        .select('verse, insight, sermons(title, speaker, church)')
-        .order('verse');
+    let rows: any[] = exactData || [];
 
-      if (data) {
-        const dbInsights = data
-          .filter((item: any) => {
-            const parsedVerses = parseVerseReference(item.verse);
-            return parsedVerses.some(parsed =>
-              parsed.book === book && parsed.chapter === chapter && parsed.verse === verse
-            );
-          })
-          .map((item: any) => ({
-            verse: item.verse,
-            insight: item.insight,
-            sermonTitle: item.sermons?.title || 'Unknown',
-            speaker: item.sermons?.speaker || 'Unknown',
-            church: item.sermons?.church || 'Unknown',
-          }));
-
-        // append DB ones, avoiding exact duplicates based on text
-        dbInsights.forEach(i => {
-          if (!combined.some(existing => existing.insight === i.insight && existing.sermonTitle === i.sermonTitle)) {
-            combined.push(i);
-          }
-        });
-      }
+    // Fallback: case-insensitive text search for verses mentioned in content
+    if (rows.length === 0) {
+      const { data: ftsData } = await supabase
+        .from('sermon_chunks')
+        .select('id, sermon_id, content, verse_references, start_seconds, sermons(title, speaker, church, video_id)')
+        .ilike('content', `%${verseRef}%`)
+        .limit(10);
+      rows = ftsData || [];
     }
 
-    setSermonInsights(combined);
+    // Group by sermon
+    const grouped = new Map<string, SermonGroup>();
+    for (const row of rows) {
+      const s = row.sermons || {};
+      if (!grouped.has(row.sermon_id)) {
+        grouped.set(row.sermon_id, {
+          sermonId: row.sermon_id,
+          title: s.title || 'Unknown Sermon',
+          speaker: s.speaker || '',
+          church: s.church || '',
+          videoId: s.video_id || '',
+          chunks: [],
+        });
+      }
+      grouped.get(row.sermon_id)!.chunks.push({
+        content: row.content,
+        startSeconds: row.start_seconds || 0,
+      });
+    }
+
+    setSermonGroups([...grouped.values()]);
   };
 
   const loadMyNote = async () => {
@@ -573,20 +570,36 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'sermons' && (
             <div className="space-y-6">
-              {sermonInsights.length === 0 ? (
+              {sermonGroups.length === 0 ? (
                 <p className="text-[#2c1810]/60 text-center py-8">
-                  No sermon insights for this verse yet.
+                  No sermon content found for this verse yet.
                 </p>
               ) : (
-                sermonInsights.map((insight: any, idx: number) => (
-                  <div key={idx} className="bg-white/60 rounded-lg p-4 border border-[#c49a5c]/20">
-                    <h4 className="font-semibold text-[#2c1810] mb-2">{insight.sermonTitle}</h4>
+                sermonGroups.map((group) => (
+                  <div key={group.sermonId} className="bg-white/60 rounded-lg p-4 border border-[#c49a5c]/20">
+                    <h4 className="font-semibold text-[#2c1810] mb-1">{group.title}</h4>
                     <div className="flex items-center gap-2 text-sm text-[#2c1810]/70 mb-3">
-                      <span>{insight.speaker}</span>
-                      <span>•</span>
-                      <span>{insight.church}</span>
+                      {group.speaker && <span>{group.speaker}</span>}
+                      {group.speaker && group.church && <span>•</span>}
+                      {group.church && <span>{group.church}</span>}
                     </div>
-                    <p className="text-[#2c1810] leading-relaxed">{insight.insight}</p>
+                    <div className="space-y-3">
+                      {group.chunks.map((chunk, idx) => (
+                        <div key={idx}>
+                          <p className="text-[#2c1810] leading-relaxed text-sm">{chunk.content}</p>
+                          {group.videoId && (
+                            <a
+                              href={`https://www.youtube.com/watch?v=${group.videoId}&t=${chunk.startSeconds}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-block mt-2 text-xs text-[#c49a5c] hover:underline"
+                            >
+                              ▶ Watch at {formatTimestamp(chunk.startSeconds)}
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))
               )}
