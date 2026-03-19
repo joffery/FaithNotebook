@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Heart, Lock, Unlock } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { getRandomCommunityName } from '../utils/verseParser';
+import { getRandomCommunityName, parseVerseReference } from '../utils/verseParser';
 import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
 
 type VersePanelProps = {
@@ -34,6 +34,7 @@ type SermonGroup = {
   relevantText: string | null;
   isSummaryFallback: boolean;
   matchType: 'exact' | 'broader';
+  matchedReference: string | null;
   youtubePublishedAt?: string | null;
 };
 
@@ -71,6 +72,11 @@ const parseVerseRefs = (value: unknown): string[] => {
     }
   }
   return [];
+};
+
+const matchesVerseReference = (candidate: string, book: string, chapter: number, verse: number) => {
+  const parsed = parseVerseReference(candidate);
+  return parsed.some((item) => item.book === book && item.chapter === chapter && item.verse === verse);
 };
 
 export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
@@ -170,10 +176,10 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     const matchedRows = sortedRows.filter((row: any) => {
       const vis = parseVerseInsights(row.verse_insights);
       const refs = parseVerseRefs(row.verses);
-      const hasExactRef = refs.includes(verseRef);
+      const hasExactRef = refs.some((ref) => matchesVerseReference(ref, book, chapter, verse));
       const hasChapterRef = refs.includes(chapterRef);
       const hasChapterVerseRef = refs.some((ref) => ref.startsWith(chapterPrefix));
-      const hasExactInsight = vis.some((vi: { verse: string }) => vi.verse === verseRef);
+      const hasExactInsight = vis.some((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
       const hasChapterInsight = vis.some((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
 
       return hasExactRef || hasChapterRef || hasChapterVerseRef || hasExactInsight || hasChapterInsight;
@@ -185,13 +191,16 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       .map((row: any): SermonGroup | null => {
         const vis = parseVerseInsights(row.verse_insights);
         const refs = parseVerseRefs(row.verses);
-        const exact = vis.find((vi: { verse: string }) => vi.verse === verseRef);
+        const exact = vis.find((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
         const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
-        const hasExactRef = refs.includes(verseRef);
+        const exactRef = refs.find((ref) => matchesVerseReference(ref, book, chapter, verse)) || null;
+        const broaderRef = refs.find((ref) => ref === chapterRef || ref.startsWith(chapterPrefix)) || null;
+        const hasExactRef = !!exactRef;
         const hasExactInsight = !!exact;
         const insightText = exact?.insight || chMatch?.insight || null;
         const summary = trimToSentences(row.summary || '', 3);
         const matchType: SermonGroup['matchType'] = hasExactInsight || hasExactRef ? 'exact' : 'broader';
+        const matchedReference = exact?.verse || chMatch?.verse || exactRef || broaderRef;
 
         if (!summary && !insightText) {
           return null;
@@ -207,6 +216,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
           relevantText: insightText,
           isSummaryFallback: !insightText,
           matchType,
+          matchedReference,
           youtubePublishedAt: getPrimarySermonDate(row),
         };
       })
@@ -811,7 +821,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
             {group.relevantText && !group.isSummaryFallback && (
               <div>
-                <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">Related To {verseRef}</p>
+                <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-1">
+                  Related To {group.matchType === 'exact' ? verseRef : (group.matchedReference || `${book} ${chapter}`)}
+                </p>
                 <p className="text-[#2c1810] leading-relaxed text-sm">{group.relevantText}</p>
               </div>
             )}
