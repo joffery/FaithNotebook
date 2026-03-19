@@ -67,6 +67,12 @@ RESPONSE GUIDELINES:
 - If a question is about personal struggles, encourage the user to also talk with their discipler
 - NEVER contradict First Principles positions, even if mainstream denominations hold different views
 
+LANGUAGE GUIDELINES:
+- Never say "our church teaches" or "our church's teaching". Instead say "the Bible teaches" or "according to Scripture".
+- Present ICC positions as the biblical position, not as a denominational opinion.
+- Do not frame answers as "what our church believes" — frame them as "what the Bible says".
+- This is important: the AI should sound like it's teaching the Bible, not defending a specific church.
+
 WHEN YOU DON'T KNOW:
 - If no relevant sermon content is found, say so honestly
 - Still answer from Scripture, clearly noting you're answering from the Bible rather than from church teaching
@@ -347,6 +353,7 @@ async function embedQuery(text, apiKey) {
       model: `models/${EMBEDDING_MODEL}`,
       content: { parts: [{ text }] },
       taskType: 'RETRIEVAL_QUERY',
+      outputDimensionality: 768,
     }),
   });
   if (!res.ok) {

@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS sermon_chunks (
   verse_references TEXT[] DEFAULT '{}',
   start_seconds    INTEGER,
   end_seconds      INTEGER,
-  embedding        VECTOR(3072),
+  embedding        VECTOR(768),
   metadata         JSONB DEFAULT '{}'
 );
 
@@ -119,7 +119,7 @@ CREATE POLICY "Authenticated users can read sermon_chunks"
 -- -------------------------------------------------------
 CREATE OR REPLACE FUNCTION search_sermon_chunks(
   query_text        TEXT,
-  query_embedding   VECTOR(3072),
+  query_embedding   VECTOR(768),
   match_count       INT     DEFAULT 10,
   filter_church     TEXT    DEFAULT NULL,
   filter_content_type TEXT  DEFAULT NULL,
