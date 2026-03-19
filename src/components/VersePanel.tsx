@@ -23,26 +23,20 @@ type SharedNote = {
   is_liked_by_user?: boolean;
 };
 
-type SermonChunk = {
-  content: string;
-  startSeconds: number;
-};
-
 type SermonGroup = {
   sermonId: string;
   title: string;
   speaker: string;
   church: string;
-  videoId: string;
-  chunks: SermonChunk[];
+  youtubeUrl: string;
+  displayText: string;
+  isSummaryFallback: boolean;
 };
 
-function formatTimestamp(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${m}:${String(s).padStart(2, '0')}`;
+function trimToSentences(text: string, max: number): string {
+  if (!text) return '';
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  return sentences.slice(0, max).join(' ').trim();
 }
 
 export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
@@ -96,58 +90,44 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const loadSermonChunks = async () => {
     if (!isSupabaseConfigured) return;
 
-    // Primary: chunks where verse_references array contains this verse
+    // Primary: sermons whose verses array contains this exact verse ref
     const { data: exactData } = await supabase
-      .from('sermon_chunks')
-      .select('id, sermon_id, content, verse_references, start_seconds, sermons(title, speaker, church, video_id)')
-      .contains('verse_references', [verseRef])
-      .order('start_seconds')
+      .from('sermons')
+      .select('id, title, speaker, church, youtube_url, verse_insights, summary')
+      .contains('verses', [verseRef])
       .limit(20);
 
     let rows: any[] = exactData || [];
 
-    // Fallback 1: search for any chunk mentioning this book+chapter (e.g. "Genesis 1:")
+    // Fallback: any sermon whose verses array contains a ref in this book+chapter
     if (rows.length === 0) {
-      const chapterPrefix = `${book} ${chapter}:`;
       const { data: chapterData } = await supabase
-        .from('sermon_chunks')
-        .select('id, sermon_id, content, verse_references, start_seconds, sermons(title, speaker, church, video_id)')
-        .ilike('content', `%${chapterPrefix}%`)
+        .from('sermons')
+        .select('id, title, speaker, church, youtube_url, verse_insights, summary')
+        .filter('verses::text', 'ilike', `%${book} ${chapter}:%`)
         .limit(10);
       rows = chapterData || [];
     }
 
-    // Fallback 2: exact verse text search in content
-    if (rows.length === 0) {
-      const { data: ftsData } = await supabase
-        .from('sermon_chunks')
-        .select('id, sermon_id, content, verse_references, start_seconds, sermons(title, speaker, church, video_id)')
-        .ilike('content', `%${verseRef}%`)
-        .limit(10);
-      rows = ftsData || [];
-    }
+    const chapterPrefix = `${book} ${chapter}:`;
+    const groups: SermonGroup[] = (rows || []).map((row: any) => {
+      const vis: { verse: string; insight: string }[] = row.verse_insights || [];
+      const exact = vis.find((vi: { verse: string }) => vi.verse === verseRef);
+      const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
+      const insightText = exact?.insight || chMatch?.insight || null;
+      const displayText = insightText || trimToSentences(row.summary || '', 3);
+      return {
+        sermonId: row.id,
+        title: row.title || 'Unknown Sermon',
+        speaker: row.speaker || '',
+        church: row.church || '',
+        youtubeUrl: row.youtube_url || '',
+        displayText,
+        isSummaryFallback: !insightText,
+      };
+    }).filter((g: SermonGroup) => g.displayText);
 
-    // Group by sermon
-    const grouped = new Map<string, SermonGroup>();
-    for (const row of rows) {
-      const s = row.sermons || {};
-      if (!grouped.has(row.sermon_id)) {
-        grouped.set(row.sermon_id, {
-          sermonId: row.sermon_id,
-          title: s.title || 'Unknown Sermon',
-          speaker: s.speaker || '',
-          church: s.church || '',
-          videoId: s.video_id || '',
-          chunks: [],
-        });
-      }
-      grouped.get(row.sermon_id)!.chunks.push({
-        content: row.content,
-        startSeconds: row.start_seconds || 0,
-      });
-    }
-
-    setSermonGroups([...grouped.values()]);
+    setSermonGroups(groups);
   };
 
   const loadMyNote = async () => {
@@ -261,9 +241,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         profileMap = new Map((profilesData || []).map((p: any) => [p.id, p.display_name]));
       }
 
-      const likedNoteIds = new Set(likesData?.map(like => like.note_id) || []);
+      const likedNoteIds = new Set(likesData?.map((like: any) => like.note_id) || []);
 
-      setCommunityNotes(notesData.map(note => ({
+      setCommunityNotes(notesData.map((note: any) => ({
         ...note,
         profile: {
           display_name:
@@ -594,23 +574,19 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                       {group.speaker && group.church && <span>•</span>}
                       {group.church && <span>{group.church}</span>}
                     </div>
-                    <div className="space-y-3">
-                      {group.chunks.map((chunk, idx) => (
-                        <div key={idx}>
-                          <p className="text-[#2c1810] leading-relaxed text-sm">{chunk.content}</p>
-                          {group.videoId && (
-                            <a
-                              href={`https://www.youtube.com/watch?v=${group.videoId}&t=${chunk.startSeconds}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-block mt-2 text-xs text-[#c49a5c] hover:underline"
-                            >
-                              ▶ Watch at {formatTimestamp(chunk.startSeconds)}
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <p className="text-[#2c1810] leading-relaxed text-sm mb-3">
+                      {group.displayText}
+                    </p>
+                    {group.youtubeUrl && (
+                      <a
+                        href={group.youtubeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block text-xs text-[#c49a5c] hover:underline"
+                      >
+                        ▶ Watch on YouTube
+                      </a>
+                    )}
                   </div>
                 ))
               )}

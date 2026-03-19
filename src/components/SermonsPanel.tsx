@@ -1,9 +1,14 @@
 import { useState, useEffect } from 'react';
-import { X, Search } from 'lucide-react';
+import { X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 type SermonsPanelProps = {
   onClose: () => void;
+};
+
+type VerseInsight = {
+  verse: string;
+  insight: string;
 };
 
 type Sermon = {
@@ -13,8 +18,10 @@ type Sermon = {
   church: string;
   region: string;
   youtube_url: string;
-  video_id: string;
   processed_at: string;
+  summary?: string;
+  verse_insights?: VerseInsight[];
+  tags?: string[];
 };
 
 const REGIONS = [
@@ -30,6 +37,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [region, setRegion] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     loadSermons();
@@ -41,7 +49,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
 
     let query = supabase
       .from('sermons')
-      .select('id, title, speaker, church, region, youtube_url, video_id, processed_at')
+      .select('id, title, speaker, church, region, youtube_url, processed_at, summary, verse_insights, tags')
       .order('processed_at', { ascending: false })
       .limit(200);
 
@@ -63,6 +71,10 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
       s.church?.toLowerCase().includes(q)
     );
   });
+
+  const toggleExpand = (id: string) => {
+    setExpandedId(prev => (prev === id ? null : id));
+  };
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50">
@@ -106,32 +118,84 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {loading ? (
             <p className="text-center text-[#2c1810]/60 py-8">Loading sermons…</p>
           ) : filtered.length === 0 ? (
             <p className="text-center text-[#2c1810]/60 py-8">No sermons found.</p>
           ) : (
-            filtered.map(sermon => (
-              <div key={sermon.id} className="bg-white/60 rounded-lg p-4 border border-[#c49a5c]/20">
-                <h4 className="font-semibold text-[#2c1810] leading-snug">{sermon.title}</h4>
-                <div className="flex items-center gap-2 text-sm text-[#2c1810]/70 mt-1">
-                  {sermon.speaker && <span>{sermon.speaker}</span>}
-                  {sermon.speaker && sermon.church && <span>•</span>}
-                  {sermon.church && <span>{sermon.church}</span>}
-                </div>
-                {sermon.youtube_url && (
-                  <a
-                    href={sermon.youtube_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-block mt-2 text-xs text-[#c49a5c] hover:underline"
+            filtered.map(sermon => {
+              const isOpen = expandedId === sermon.id;
+              return (
+                <div key={sermon.id} className="bg-white/60 rounded-lg border border-[#c49a5c]/20 overflow-hidden">
+                  <button
+                    className="w-full text-left p-4 flex items-start justify-between gap-3"
+                    onClick={() => toggleExpand(sermon.id)}
                   >
-                    ▶ Watch on YouTube
-                  </a>
-                )}
-              </div>
-            ))
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-[#2c1810] leading-snug">{sermon.title}</h4>
+                      <div className="flex items-center gap-2 text-sm text-[#2c1810]/70 mt-1">
+                        {sermon.speaker && <span>{sermon.speaker}</span>}
+                        {sermon.speaker && sermon.church && <span>•</span>}
+                        {sermon.church && <span>{sermon.church}</span>}
+                      </div>
+                    </div>
+                    {isOpen ? (
+                      <ChevronUp size={18} className="flex-shrink-0 text-[#c49a5c] mt-1" />
+                    ) : (
+                      <ChevronDown size={18} className="flex-shrink-0 text-[#2c1810]/40 mt-1" />
+                    )}
+                  </button>
+
+                  {isOpen && (
+                    <div className="px-4 pb-4 space-y-4 border-t border-[#c49a5c]/10 pt-3">
+                      {sermon.summary && (
+                        <p className="text-sm text-[#2c1810] leading-relaxed">{sermon.summary}</p>
+                      )}
+
+                      {sermon.verse_insights && sermon.verse_insights.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-2">Verse Insights</p>
+                          <ul className="space-y-2">
+                            {sermon.verse_insights.map((vi, i) => (
+                              <li key={i} className="text-sm text-[#2c1810]">
+                                <span className="font-medium text-[#c49a5c]">{vi.verse}</span>
+                                {' — '}
+                                {vi.insight}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {sermon.tags && sermon.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {sermon.tags.map((tag, i) => (
+                            <span
+                              key={i}
+                              className="px-2 py-0.5 bg-[#c49a5c]/10 text-[#c49a5c] text-xs rounded-full"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {sermon.youtube_url && (
+                        <a
+                          href={sermon.youtube_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-block text-xs text-[#c49a5c] hover:underline"
+                        >
+                          ▶ Watch on YouTube
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </div>
