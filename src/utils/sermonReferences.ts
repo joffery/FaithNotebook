@@ -3,6 +3,7 @@ import { parseVerseReference } from './verseParser';
 
 type VerseInsightLike = {
   verse?: string;
+  insight?: string;
 };
 
 export type SermonReferenceIndex = {
@@ -34,6 +35,12 @@ export const parseSermonVerseInsights = (value: unknown): VerseInsightLike[] => 
   }
   return [];
 };
+
+const hasUsableInsight = (insight: VerseInsightLike) =>
+  typeof insight?.verse === 'string' &&
+  insight.verse.trim().length > 0 &&
+  typeof insight?.insight === 'string' &&
+  insight.insight.trim().length > 0;
 
 export const parseSermonVerseRefs = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string');
@@ -87,7 +94,8 @@ export async function getSermonReferenceIndex(): Promise<SermonReferenceIndex> {
 
     for (const row of data || []) {
       const refs = parseSermonVerseInsights((row as any).verse_insights)
-        .map((insight) => insight?.verse)
+        .filter(hasUsableInsight)
+        .map((insight) => insight.verse)
         .filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0);
 
       refs.forEach((ref) => addVerseRefToIndex(index, ref));

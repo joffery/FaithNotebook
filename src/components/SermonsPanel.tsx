@@ -91,24 +91,6 @@ const getSermonScriptureRefs = (sermon: Sermon) => {
   return [...new Set([...insightRefs, ...verseRefs])];
 };
 
-const getPrimaryScriptureTarget = (sermon: Sermon) => {
-  const refs = getSermonScriptureRefs(sermon);
-  for (const ref of refs) {
-    const parsed = parseVerseReference(ref);
-    if (parsed.length > 0) {
-      const first = parsed[0];
-      return {
-        ref,
-        book: first.book,
-        chapter: first.chapter,
-        verse: first.verse,
-      };
-    }
-  }
-
-  return null;
-};
-
 export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [sermons, setSermons] = useState<Sermon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -326,7 +308,6 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                   const verseInsights = parseVerseInsights(sermon.verse_insights);
                   const tags = parseTags(sermon.tags);
                   const scriptureRefs = getSermonScriptureRefs(sermon);
-                  const primaryScriptureTarget = getPrimaryScriptureTarget(sermon);
                   const sermonDate = formatSermonDate(getPrimarySermonDate(sermon));
                   const summaryText = sermon.summary?.trim() || sermon.transcript_preview?.trim() || '';
 
@@ -374,21 +355,6 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                               </a>
                             )}
 
-                            {primaryScriptureTarget && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedVerseRef({
-                                    book: primaryScriptureTarget.book,
-                                    chapter: primaryScriptureTarget.chapter,
-                                    verse: primaryScriptureTarget.verse,
-                                  });
-                                }}
-                                className="inline-flex items-center justify-center rounded-lg border border-[#c49a5c]/30 bg-white px-3 py-2 text-sm font-medium text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
-                              >
-                                Open Scripture
-                              </button>
-                            )}
                           </div>
 
                           {summaryText && (
