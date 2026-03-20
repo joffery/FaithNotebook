@@ -200,62 +200,60 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const loadSermonChunks = async () => {
     if (!isSupabaseConfigured) return;
 
-    const chapterRef = `${book} ${chapter}`;
     const chapterPrefix = `${book} ${chapter}:`;
     const baseFields = 'id, title, speaker, church, youtube_url, verse_insights, summary, verses, processed_at';
     const fieldsWithPublishedAt = `${baseFields}, youtube_published_at`;
 
-    console.log('VersePanel sermon query refs:', {
-      verseRef,
-      chapterRef,
-    });
+    const runQuery = async (q: any) => {
+      let { data, error } = await q.select(fieldsWithPublishedAt).limit(30);
+      if (error && error.message?.toLowerCase().includes('youtube_published_at')) {
+        const fb = await q.select(baseFields).limit(30);
+        data = fb.data; error = fb.error;
+      }
+      return { data, error };
+    };
 
-    let { data, error } = await supabase
-      .from('sermons')
-      .select(fieldsWithPublishedAt);
-
-    if (error && error.message?.toLowerCase().includes('youtube_published_at')) {
-      const fallback = await supabase
-        .from('sermons')
-        .select(baseFields);
-      data = fallback.data;
-      error = fallback.error;
-    }
+    // Step 1: exact verse match via contains on verses TEXT[]
+    let { data, error } = await runQuery(
+      supabase.from('sermons').contains('verses', [verseRef])
+    );
 
     if (error) {
-      console.error('VersePanel sermon query error:', error);
-      setSermonGroups([]);
-      return;
+      console.error('VersePanel exact query error:', error);
     }
 
-    const sortedRows = sortSermonsNewestFirst(data || []);
+    let rows: any[] = data || [];
 
-    console.log('VersePanel sermon query data:', sortedRows);
+    // Step 2: chapter-level fallback — verses array cast to text, ilike 'Book Chapter:%'
+    if (rows.length === 0) {
+      const fb = await runQuery(
+        supabase.from('sermons').filter('verses::text', 'ilike', `%${chapterPrefix}%`)
+      );
+      if (!fb.error) rows = fb.data || [];
+    }
 
-    const matchedRows = sortedRows.filter((row: any) => {
-      const vis = parseVerseInsights(row.verse_insights);
-      const hasExactInsight = vis.some((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
-      const hasChapterInsight = vis.some((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
+    // Step 3: if verses column is unpopulated, search verse_insights JSONB text
+    if (rows.length === 0) {
+      const fb = await runQuery(
+        supabase.from('sermons').filter('verse_insights::text', 'ilike', `%${chapterPrefix}%`)
+      );
+      if (!fb.error) rows = fb.data || [];
+    }
 
-      return hasExactInsight || hasChapterInsight;
-    });
+    const sortedRows = sortSermonsNewestFirst(rows);
 
-    console.log('VersePanel sermon matched data:', matchedRows);
-
-    const groups = matchedRows
+    const groups = sortedRows
       .map((row: any): SermonGroup | null => {
         const vis = parseVerseInsights(row.verse_insights);
         const exact = vis.find((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
         const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
-        const hasExactInsight = !!exact;
         const insightText = exact?.insight || chMatch?.insight || null;
         const summary = trimToSentences(row.summary || '', 3);
-        const matchType: SermonGroup['matchType'] = hasExactInsight ? 'exact' : 'broader';
+        const matchType: SermonGroup['matchType'] = exact ? 'exact' : 'broader';
         const matchedReference = exact?.verse || chMatch?.verse || null;
 
-        if (!insightText) {
-          return null;
-        }
+        // Only show if we have either an insight or a summary to display
+        if (!insightText && !summary) return null;
 
         return {
           sermonId: row.id,
