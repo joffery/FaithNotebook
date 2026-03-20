@@ -80,12 +80,20 @@ export function AuthForm({ onClose }: { onClose?: () => void } = {}) {
   };
 
   return (
-    <div className={onClose ? 'fixed inset-0 bg-black/50 flex items-center justify-center z-[100] px-4' : 'min-h-screen bg-[#faf8f4] flex items-center justify-center px-4'}>
-      <div className="w-full max-w-md bg-[#faf8f4] rounded-2xl p-6 relative">
+    <div
+      className={
+        onClose
+          ? 'fixed inset-0 z-[100] bg-black/50 overflow-y-auto'
+          : 'min-h-screen bg-[#faf8f4] flex items-start sm:items-center justify-center px-4'
+      }
+    >
+      <div className={onClose ? 'min-h-full sm:min-h-0 flex items-start sm:items-center justify-center p-0 sm:p-4' : 'w-full flex items-start sm:items-center justify-center py-6 sm:py-0'}>
+        <div className="w-full max-w-md bg-[#faf8f4] rounded-none sm:rounded-2xl p-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] relative shadow-none sm:shadow-lg">
         {onClose && (
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-[#2c1810]/50 hover:text-[#2c1810] transition-colors"
+            className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 text-[#2c1810]/50 hover:text-[#2c1810] transition-colors"
+            aria-label="Close sign in"
           >
             <X size={22} />
           </button>
@@ -235,6 +243,7 @@ export function AuthForm({ onClose }: { onClose?: () => void } = {}) {
             )}
             <p className="pt-1 text-[#8c6430]">Powered by Tampa Bay ICC</p>
           </div>
+        </div>
         </div>
       </div>
 

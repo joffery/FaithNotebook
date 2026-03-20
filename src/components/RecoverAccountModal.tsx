@@ -72,8 +72,9 @@ export function RecoverAccountModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/45 flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl bg-[#faf8f4] shadow-2xl border border-[#c49a5c]/20 p-6">
+    <div className="fixed inset-0 z-[110] bg-black/45 overflow-y-auto">
+      <div className="min-h-full sm:min-h-0 flex items-start sm:items-center justify-center p-0 sm:p-4">
+        <div className="w-full max-w-md rounded-none sm:rounded-2xl bg-[#faf8f4] shadow-2xl border-0 sm:border border-[#c49a5c]/20 p-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 className="text-xl font-serif text-[#2c1810]">Recover Account</h2>
@@ -192,6 +193,7 @@ export function RecoverAccountModal({
             {loading ? 'Updating Password...' : 'Reset Password'}
           </button>
         </form>
+      </div>
       </div>
     </div>
   );
