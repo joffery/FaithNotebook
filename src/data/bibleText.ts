@@ -480,11 +480,14 @@ export function searchAvailableBibleText(query: string, limit: number = 30): Bib
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return [];
 
+  // Split into words so "baptism water" matches verses containing both words in any order
+  const words = normalizedQuery.split(/\s+/).filter(Boolean);
   const results: BibleSearchResult[] = [];
 
   getAvailableBibleChapters().forEach((chapterData) => {
     chapterData.verses.forEach((verse) => {
-      if (!verse.text.toLowerCase().includes(normalizedQuery)) return;
+      const lower = verse.text.toLowerCase();
+      if (!words.every((w) => lower.includes(w))) return;
 
       results.push({
         book: chapterData.book,

@@ -24,29 +24,30 @@ export function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
-    // Don't show if already dismissed
     if (localStorage.getItem(DISMISSED_KEY)) return;
 
     const detected = detectPlatform();
     if (!detected) return;
     setPlatform(detected);
 
-    // Capture Android install prompt event
-    const handleBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    if (detected === 'android') {
+      // Android: only show if the browser fires beforeinstallprompt
+      // (it won't fire if the app is already installed)
+      const handleBeforeInstall = (e: Event) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
+        // Show banner after 20s only once we have the install prompt
+        setTimeout(() => setVisible(true), 20_000);
+      };
+      window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+      return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    }
 
-    // Show banner after 20s of engagement (user has looked around)
-    const timer = setTimeout(() => {
-      setVisible(true);
-    }, 20_000);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-      clearTimeout(timer);
-    };
+    if (detected === 'ios') {
+      // iOS: show after 20s (standalone check already done in detectPlatform)
+      const timer = setTimeout(() => setVisible(true), 20_000);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   const dismiss = () => {

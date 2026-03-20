@@ -87,7 +87,7 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
           <div>
             <h2 className="text-xl font-serif text-[#2c1810]">Bible Search</h2>
             <p className="text-sm text-[#2c1810]/60 mt-1">
-              Jump to a reference like `Acts 2:38`, or search available verse text.
+              Jump to any reference (e.g. Acts 2:38) or search by keyword in chapters you've read.
             </p>
           </div>
           <button
@@ -154,7 +154,7 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
               <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
                 <p className="text-[#2c1810] font-medium">Start with a reference or a few words</p>
                 <p className="mt-2 text-sm text-[#2c1810]/60">
-                  Text search works on the Scripture content already available in the app and local cache.
+                  Keyword search works on chapters you've already read. For any passage, type the reference directly — e.g. "John 3" or "Romans 6:4".
                 </p>
               </div>
             ) : textResults.length === 0 ? (

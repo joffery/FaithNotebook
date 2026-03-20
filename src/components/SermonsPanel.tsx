@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { ensureBibleChapter } from '../data/bibleText';
+import { parseVerseReference } from '../utils/verseParser';
 import { parseSermonVerseRefs } from '../utils/sermonReferences';
 import { formatSermonDate, formatSermonMonth, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
 
@@ -69,6 +71,8 @@ const REGIONS = [
 
 const PAGE_SIZE = 20;
 
+const verseTextPromiseCache = new Map<string, Promise<string | null>>();
+
 const buildVisiblePages = (current: number, total: number) => {
   if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
 
@@ -85,7 +89,28 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [region, setRegion] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (!expandedId) return;
+    const sermon = sermons.find((s) => s.id === expandedId);
+    if (!sermon) return;
+    const insights = parseVerseInsights(sermon.verse_insights);
+    if (insights.length === 0) return;
+    let mounted = true;
+    Promise.all(insights.map(async (vi) => {
+      const text = await getVerseTextForReference(vi.verse);
+      return [vi.verse, text] as const;
+    })).then((entries) => {
+      if (!mounted) return;
+      setVerseTexts((prev) => ({
+        ...prev,
+        ...Object.fromEntries(entries.filter((e): e is readonly [string, string] => typeof e[1] === 'string' && e[1].length > 0)),
+      }));
+    });
+    return () => { mounted = false; };
+  }, [expandedId, sermons]);
 
   useEffect(() => {
     loadSermons();
@@ -341,6 +366,11 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                                 {verseInsights.map((vi, i) => (
                                   <li key={i} className="text-sm text-[#2c1810]">
                                     <p className="font-medium text-[#c49a5c]">{vi.verse}</p>
+                                    {verseTexts[vi.verse] && (
+                                      <p className="mt-1 text-xs leading-relaxed text-[#2c1810]/70 italic">
+                                        {verseTexts[vi.verse]}
+                                      </p>
+                                    )}
                                     <p className="mt-2 leading-relaxed">{vi.insight}</p>
                                   </li>
                                 ))}
@@ -437,4 +467,25 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
 
     </>
   );
+}
+
+async function getVerseTextForReference(verseRef: string): Promise<string | null> {
+  if (!verseTextPromiseCache.has(verseRef)) {
+    verseTextPromiseCache.set(
+      verseRef,
+      (async () => {
+        const parsed = parseVerseReference(verseRef);
+        if (parsed.length === 0) return null;
+        const { book, chapter } = parsed[0];
+        const chapterData = await ensureBibleChapter(book, chapter, false);
+        if (!chapterData) return null;
+        const verseMap = new Map(chapterData.verses.map((e) => [e.verse, e.text]));
+        const texts = parsed
+          .map(({ verse }) => verseMap.get(verse))
+          .filter((t): t is string => typeof t === 'string' && t.length > 0);
+        return texts.length > 0 ? texts.join(' ') : null;
+      })()
+    );
+  }
+  return verseTextPromiseCache.get(verseRef)!;
 }

@@ -240,8 +240,40 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       if (!fb.error) rows = fb.data || [];
     }
 
-    // Step 4: sermon_chunks fallback — this table has confirmed data (RAG works)
-    if (rows.length === 0) {
+    const mapRowsToGroups = (rawRows: any[]): SermonGroup[] =>
+      sortSermonsNewestFirst(rawRows)
+        .map((row: any): SermonGroup | null => {
+          const vis = parseVerseInsights(row.verse_insights);
+          const exact = vis.find((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
+          const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
+          const insightText = exact?.insight || chMatch?.insight || (row._chunkContent as string | undefined) || null;
+          const summary = trimToSentences(row.summary || '', 3);
+          const matchType: SermonGroup['matchType'] = exact ? 'exact' : 'broader';
+          const matchedReference = exact?.verse || chMatch?.verse || null;
+
+          if (!insightText && !summary) return null;
+
+          return {
+            sermonId: row.id,
+            title: row.title || 'Unknown Sermon',
+            speaker: row.speaker || '',
+            church: row.church || '',
+            youtubeUrl: row.youtube_url || '',
+            summary,
+            relevantText: insightText,
+            isSummaryFallback: !insightText,
+            matchType,
+            matchedReference,
+            youtubePublishedAt: getPrimarySermonDate(row),
+          };
+        })
+        .filter((group): group is SermonGroup => group !== null);
+
+    let groups = mapRowsToGroups(rows);
+
+    // Step 4: sermon_chunks fallback — runs when steps 1-3 found rows but none had
+    // verse_insights or summary (pipeline analysis not yet run for this book/chapter).
+    if (groups.length === 0) {
       const { data: chunksData } = await supabase
         .from('sermon_chunks')
         .select('sermon_id, content, verse_references, start_seconds, sermons(id, title, speaker, church, youtube_url, summary, processed_at, youtube_published_at)')
@@ -250,7 +282,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
       if (chunksData && chunksData.length > 0) {
         const seenIds = new Set<string>();
-        rows = chunksData
+        const chunkRows = chunksData
           .filter((c: any) => {
             if (seenIds.has(c.sermon_id)) return false;
             seenIds.add(c.sermon_id);
@@ -261,39 +293,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
             id: c.sermon_id,
             _chunkContent: c.content,
           }));
+        groups = mapRowsToGroups(chunkRows);
       }
     }
-
-    const sortedRows = sortSermonsNewestFirst(rows);
-
-    const groups = sortedRows
-      .map((row: any): SermonGroup | null => {
-        const vis = parseVerseInsights(row.verse_insights);
-        const exact = vis.find((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
-        const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
-        const insightText = exact?.insight || chMatch?.insight || (row._chunkContent as string | undefined) || null;
-        const summary = trimToSentences(row.summary || '', 3);
-        const matchType: SermonGroup['matchType'] = exact ? 'exact' : 'broader';
-        const matchedReference = exact?.verse || chMatch?.verse || null;
-
-        // Only show if we have either an insight or a summary to display
-        if (!insightText && !summary) return null;
-
-        return {
-          sermonId: row.id,
-          title: row.title || 'Unknown Sermon',
-          speaker: row.speaker || '',
-          church: row.church || '',
-          youtubeUrl: row.youtube_url || '',
-          summary,
-          relevantText: insightText,
-          isSummaryFallback: !insightText,
-          matchType,
-          matchedReference,
-          youtubePublishedAt: getPrimarySermonDate(row),
-        };
-      })
-      .filter((group): group is SermonGroup => group !== null);
 
     setSermonGroups(groups);
   };
