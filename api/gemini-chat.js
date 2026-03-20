@@ -60,7 +60,7 @@ You hold to the following ICC convictions from First Principles. When your answe
 RESPONSE GUIDELINES:
 - Answer like a knowledgeable, warm brother or sister in Christ having a Bible study conversation — not like an encyclopedia or academic paper.
 - Give a CLEAR, DIRECT answer first in 1-2 sentences. Then explain with Scripture.
-- Keep answers concise: aim for 200-350 words unless the question genuinely requires more detail.
+- Keep answers concise: aim for 150-250 words for simple doctrinal questions. Only go longer (300-400 words) for complex practical questions like helping someone with sin struggles or preparing a Bible study.
 - Use sermon references SPARINGLY — cite 1-2 sermons maximum that are most relevant. Do NOT try to cite every sermon in your context. Quality over quantity.
 - When citing a sermon, weave it naturally: 'As [Speaker] taught in [Title]...' — don't list them as formal citations.
 - Do NOT present answers as numbered academic arguments (1. POINT, 2. POINT). Use natural conversational flow with paragraph breaks.
@@ -69,7 +69,7 @@ RESPONSE GUIDELINES:
 - On topics NOT covered by First Principles, offer balanced biblical analysis.
 - If a question is about personal struggles, be empathetic first, then point to Scripture, then encourage them to talk with their discipler.
 - NEVER contradict First Principles positions.
-- End with a brief practical challenge or encouragement, not a disclaimer.
+- End with a brief practical challenge or encouragement. Only suggest talking to a discipler or church leader when the question involves personal struggles (sin, relationships, mental health). Do NOT add this suggestion for straightforward doctrinal questions — it sounds redundant when someone just wants to know what the Bible says.
 
 LANGUAGE GUIDELINES:
 - Never say "our church teaches", "the ICC teaches", or "according to the teaching of the International Christian Church".
@@ -331,6 +331,34 @@ function detectVerseRefs(text) {
   return [...new Set(matches.map((m) => m.trim()))];
 }
 
+// Bible book names to exclude from name detection
+const BIBLE_BOOKS_SET = new Set([
+  'genesis','exodus','leviticus','numbers','deuteronomy','joshua','judges','ruth',
+  'samuel','kings','chronicles','ezra','nehemiah','esther','job','psalms','psalm',
+  'proverbs','ecclesiastes','isaiah','jeremiah','lamentations','ezekiel','daniel',
+  'hosea','joel','amos','obadiah','jonah','micah','nahum','habakkuk','zephaniah',
+  'haggai','zechariah','malachi','matthew','mark','luke','john','acts','romans',
+  'corinthians','galatians','ephesians','philippians','colossians','thessalonians',
+  'timothy','titus','philemon','hebrews','james','peter','jude','revelation',
+  'song','solomon',
+]);
+
+function detectPersonNames(text) {
+  // Match capitalized words that aren't Bible books, question words, or common English words
+  const SKIP = new Set([
+    'what','who','how','why','when','where','which','is','are','was','were',
+    'did','does','do','can','could','should','would','will','the','a','an',
+    'i','my','me','we','our','you','your','he','she','it','they','their',
+    'about','with','from','that','this','have','has','had','not','but','and',
+    'or','for','in','on','at','to','of','if','so','be','by','his','her',
+    'bible','god','jesus','christ','holy','spirit','lord','church','scripture',
+  ]);
+  const matches = text.match(/\b([A-Z][a-z]{2,})\b/g) || [];
+  return matches
+    .map((m) => m.toLowerCase())
+    .filter((m) => !SKIP.has(m) && !BIBLE_BOOKS_SET.has(m));
+}
+
 function detectDoctrineTopics(text) {
   const lower = text.toLowerCase();
   const scores = Object.entries(FIRST_PRINCIPLES).map(([key, topic]) => {
@@ -415,7 +443,7 @@ async function fetchSermonsByIds(ids, supabaseUrl, supabaseKey) {
 // Context Assembly
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildContext({ chunks, sermonMap, doctrineTopics }) {
+function buildContext({ chunks, sermonMap, doctrineTopics, personNames }) {
   const parts = [];
 
   // First Principles sections (inject only relevant ones)
@@ -429,6 +457,30 @@ function buildContext({ chunks, sermonMap, doctrineTopics }) {
 
   // Sermon chunks
   if (chunks.length > 0) {
+    // If the user asked about a specific speaker, surface a summary of which
+    // speakers appear in the retrieved results so Gemini can match confidently.
+    if (personNames && personNames.length > 0) {
+      const speakerIndex = {};
+      for (const chunk of chunks) {
+        const meta = chunk.metadata || {};
+        const sermon = sermonMap[chunk.sermon_id] || {};
+        const speaker = meta.speaker || '';
+        const title = sermon.title || '';
+        if (speaker) {
+          if (!speakerIndex[speaker]) speakerIndex[speaker] = [];
+          if (title && !speakerIndex[speaker].includes(title)) {
+            speakerIndex[speaker].push(title);
+          }
+        }
+      }
+      const indexLines = Object.entries(speakerIndex)
+        .map(([sp, titles]) => `  ${sp}: ${titles.slice(0, 3).join('; ')}`)
+        .join('\n');
+      if (indexLines) {
+        parts.push(`--- SPEAKERS IN RETRIEVED RESULTS ---\n${indexLines}`);
+      }
+    }
+
     parts.push('\n--- RELEVANT SERMON EXCERPTS ---');
     for (const chunk of chunks) {
       const meta = chunk.metadata || {};
@@ -570,8 +622,14 @@ export default async function handler(req, res) {
       const queryEmbedding = await embedQuery(userMessage, apiKey);
 
       if (queryEmbedding) {
+        // Boost queryText with any person names detected (e.g. "Malik" in "What did Malik teach about John 5?")
+        const personNames = detectPersonNames(userMessage);
+        const boostedQueryText = personNames.length > 0
+          ? `${personNames.join(' ')} ${userMessage}`
+          : userMessage;
+
         chunks = await searchChunks({
-          queryText: userMessage,
+          queryText: boostedQueryText,
           queryEmbedding,
           matchCount: MATCH_COUNT,
           filterVerse: detectedVerses[0] || null,
@@ -595,7 +653,8 @@ export default async function handler(req, res) {
   }
 
   // ── Step 5: Assemble context ──────────────────────────────────────────────
-  const context = buildContext({ chunks, sermonMap, doctrineTopics });
+  const personNames = detectPersonNames(userMessage);
+  const context = buildContext({ chunks, sermonMap, doctrineTopics, personNames });
 
   // ── Step 6: Call Gemini ───────────────────────────────────────────────────
   try {
