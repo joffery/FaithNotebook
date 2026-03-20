@@ -1,11 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { ensureBibleChapter } from '../data/bibleText';
-import { parseVerseReference } from '../utils/verseParser';
 import { parseSermonVerseRefs } from '../utils/sermonReferences';
 import { formatSermonDate, formatSermonMonth, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
-import { VersePanel } from './VersePanel';
 
 type SermonsPanelProps = {
   onClose: () => void;
@@ -31,8 +28,6 @@ type Sermon = {
   verse_insights?: VerseInsight[];
   tags?: string[];
 };
-
-const verseTextPromiseCache = new Map<string, Promise<string | null>>();
 
 const parseVerseInsights = (value: unknown): VerseInsight[] => {
   if (Array.isArray(value)) return value;
@@ -82,14 +77,6 @@ const buildVisiblePages = (current: number, total: number) => {
   return [1, current - 1, current, current + 1, total];
 };
 
-const getSermonScriptureRefs = (sermon: Sermon) => {
-  const verseRefs = parseSermonVerseRefs(sermon.verses);
-  const insightRefs = parseVerseInsights(sermon.verse_insights)
-    .map((insight) => insight.verse)
-    .filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0);
-
-  return [...new Set([...insightRefs, ...verseRefs])];
-};
 
 export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [sermons, setSermons] = useState<Sermon[]>([]);
@@ -98,41 +85,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [region, setRegion] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
-  const [selectedVerseRef, setSelectedVerseRef] = useState<{ book: string; chapter: number; verse: number } | null>(null);
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
-  useEffect(() => {
-    if (!expandedId) return;
-
-    const sermon = sermons.find((item) => item.id === expandedId);
-    if (!sermon) return;
-
-    const insights = parseVerseInsights(sermon.verse_insights);
-    if (insights.length === 0) return;
-
-    let mounted = true;
-
-    Promise.all(
-      insights.map(async (insight) => {
-        const text = await getVerseTextForReference(insight.verse);
-        return [insight.verse, text] as const;
-      })
-    ).then((entries) => {
-      if (!mounted) return;
-
-      setVerseTexts((prev) => ({
-        ...prev,
-        ...Object.fromEntries(
-          entries.filter((entry): entry is readonly [string, string] => typeof entry[1] === 'string' && entry[1].length > 0)
-        ),
-      }));
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, [expandedId, sermons]);
 
   useEffect(() => {
     loadSermons();
@@ -307,7 +260,9 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                   const isOpen = expandedId === sermon.id;
                   const verseInsights = parseVerseInsights(sermon.verse_insights);
                   const tags = parseTags(sermon.tags);
-                  const scriptureRefs = getSermonScriptureRefs(sermon);
+                  const scriptureRefs = parseVerseInsights(sermon.verse_insights)
+                    .map((vi) => vi.verse)
+                    .filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0);
                   const sermonDate = formatSermonDate(getPrimarySermonDate(sermon));
                   const summaryText = sermon.summary?.trim() || sermon.transcript_preview?.trim() || '';
 
@@ -367,34 +322,14 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                                 Scripture Path
                               </p>
                               <div className="flex flex-wrap gap-2">
-                                {scriptureRefs.slice(0, 6).map((ref) => {
-                                  const parsed = parseVerseReference(ref);
-                                  const first = parsed[0];
-                                  const isOpenable = !!first;
-
-                                  return (
-                                    <button
-                                      key={ref}
-                                      type="button"
-                                      disabled={!isOpenable}
-                                      onClick={() => {
-                                        if (!first) return;
-                                        setSelectedVerseRef({
-                                          book: first.book,
-                                          chapter: first.chapter,
-                                          verse: first.verse,
-                                        });
-                                      }}
-                                      className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
-                                        isOpenable
-                                          ? 'bg-[#c49a5c]/10 text-[#c49a5c] hover:bg-[#c49a5c]/18'
-                                          : 'bg-[#2c1810]/5 text-[#2c1810]/55'
-                                      }`}
-                                    >
-                                      {ref}
-                                    </button>
-                                  );
-                                })}
+                                {scriptureRefs.slice(0, 6).map((ref) => (
+                                  <span
+                                    key={ref}
+                                    className="rounded-full px-3 py-1.5 text-xs bg-[#c49a5c]/10 text-[#c49a5c]"
+                                  >
+                                    {ref}
+                                  </span>
+                                ))}
                               </div>
                             </div>
                           )}
@@ -406,11 +341,6 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                                 {verseInsights.map((vi, i) => (
                                   <li key={i} className="text-sm text-[#2c1810]">
                                     <p className="font-medium text-[#c49a5c]">{vi.verse}</p>
-                                    {verseTexts[vi.verse] && (
-                                      <p className="mt-1 text-xs leading-relaxed text-[#2c1810]/70 italic">
-                                        {verseTexts[vi.verse]}
-                                      </p>
-                                    )}
                                     <p className="mt-2 leading-relaxed">{vi.insight}</p>
                                   </li>
                                 ))}
@@ -505,39 +435,6 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
         </div>
       </div>
 
-      {selectedVerseRef && (
-        <VersePanel
-          book={selectedVerseRef.book}
-          chapter={selectedVerseRef.chapter}
-          verse={selectedVerseRef.verse}
-          onClose={() => setSelectedVerseRef(null)}
-        />
-      )}
     </>
   );
-}
-
-async function getVerseTextForReference(verseRef: string): Promise<string | null> {
-  if (!verseTextPromiseCache.has(verseRef)) {
-    verseTextPromiseCache.set(
-      verseRef,
-      (async () => {
-        const parsed = parseVerseReference(verseRef);
-        if (parsed.length === 0) return null;
-
-        const { book, chapter } = parsed[0];
-        const chapterData = await ensureBibleChapter(book, chapter, false);
-        if (!chapterData) return null;
-
-        const verseMap = new Map(chapterData.verses.map((entry) => [entry.verse, entry.text]));
-        const verseTexts = parsed
-          .map(({ verse }) => verseMap.get(verse))
-          .filter((text): text is string => typeof text === 'string' && text.length > 0);
-
-        return verseTexts.length > 0 ? verseTexts.join(' ') : null;
-      })()
-    );
-  }
-
-  return verseTextPromiseCache.get(verseRef)!;
 }

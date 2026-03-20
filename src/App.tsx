@@ -9,6 +9,7 @@ import { ProfileSettingsModal } from './components/ProfileSettingsModal';
 import { MobileTabBar } from './components/MobileTabBar';
 import { MyNotesPanel } from './components/MyNotesPanel';
 import { BibleSearchModal } from './components/BibleSearchModal';
+import { InstallPrompt } from './components/InstallPrompt';
 import { useAuth } from './context/AuthContext';
 import { isSupabaseConfigured } from './lib/supabase';
 import { normalizeBibleBookName } from './utils/verseParser';
@@ -48,6 +49,7 @@ function App() {
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showMyNotes, setShowMyNotes] = useState(false);
   const [showBibleSearch, setShowBibleSearch] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedVerseFromApp, setSelectedVerseFromApp] = useState<number | null>(null);
 
   useEffect(() => {
@@ -100,10 +102,6 @@ function App() {
     );
   }
 
-  if (!user) {
-    return <AuthForm />;
-  }
-
   return (
     <div className="min-h-screen bg-[#faf8f4]">
       <Navigation
@@ -112,8 +110,10 @@ function App() {
         onNavigate={handleNavigate}
         onOpenAIChat={() => setShowAIChat(true)}
         onOpenSermons={() => setShowSermons(true)}
-        onOpenProfile={() => setShowProfileSettings(true)}
+        onOpenProfile={user ? () => setShowProfileSettings(true) : () => setShowAuthModal(true)}
         onOpenSearch={() => setShowBibleSearch(true)}
+        onOpenSignIn={() => setShowAuthModal(true)}
+        isAuthenticated={!!user}
       />
 
       <main className="py-8 px-6 pb-28 sm:pb-8">
@@ -200,6 +200,7 @@ function App() {
           setShowAIChat(true);
         }}
         onOpenProfile={() => {
+          if (!user) { setShowAuthModal(true); return; }
           setShowAIChat(false);
           setShowSermons(false);
           setShowMyNotes(false);
@@ -208,6 +209,12 @@ function App() {
       />
 
       <div className="fixed bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#faf8f4] to-transparent pointer-events-none hidden sm:block"></div>
+
+      <InstallPrompt />
+
+      {showAuthModal && (
+        <AuthForm onClose={() => setShowAuthModal(false)} />
+      )}
     </div>
   );
 }

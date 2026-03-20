@@ -14,6 +14,7 @@ type Source = {
   church: string;
   youtubeUrl: string;
   startSeconds: number;
+  summary?: string;
 };
 
 type Message = {
@@ -58,10 +59,21 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   const [accuracyFeedbackByMessageIndex, setAccuracyFeedbackByMessageIndex] = useState<Record<number, 'accurate' | 'inaccurate'>>({});
   const [flaggedMessageIndexes, setFlaggedMessageIndexes] = useState<Record<number, boolean>>({});
   const [versePanelRef, setVersePanelRef] = useState<{ book: string; chapter: number; verse: number } | null>(null);
+  const [expandedSummaryIndex, setExpandedSummaryIndex] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const lastAssistantMsgRef = useRef<HTMLDivElement | null>(null);
+  const prevMessageCount = useRef(0);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const count = messages.length;
+    const lastMessage = messages[count - 1];
+
+    if (count > prevMessageCount.current && lastMessage?.role === 'assistant') {
+      lastAssistantMsgRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+    prevMessageCount.current = count;
   }, [messages, loading]);
 
   useEffect(() => {
@@ -243,7 +255,11 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
             </div>
           ) : (
             messages.map((message, idx) => (
-              <div key={idx} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div
+                key={idx}
+                ref={message.role === 'assistant' && idx === messages.length - 1 ? lastAssistantMsgRef : undefined}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
                 <div
                   className={`max-w-[92%] sm:max-w-[80%] rounded-xl p-4 sm:p-5 ${
                     message.role === 'user'
@@ -331,27 +347,44 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
                         </ReactMarkdown>
                       </div>
                       {message.sources && message.sources.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-[#c49a5c]/20 space-y-1">
+                        <div className="mt-3 pt-3 border-t border-[#c49a5c]/20 space-y-2">
                           <p className="text-xs font-semibold text-[#2c1810]/60 uppercase tracking-wide">Sources</p>
-                          {message.sources.map((src, i) => (
-                            <div key={i} className="text-xs text-[#2c1810]/70">
-                              <span className="font-medium">{src.sermonTitle}</span>
-                              {src.speaker && <span> · {src.speaker}</span>}
-                              {src.church && <span> · {src.church}</span>}
-                              {src.youtubeUrl && (
-                                <a
-                                  href={src.startSeconds
-                                    ? `${src.youtubeUrl}&t=${src.startSeconds}`
-                                    : src.youtubeUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="ml-2 text-[#c49a5c] hover:underline"
-                                >
-                                  ▶ Watch
-                                </a>
-                              )}
-                            </div>
-                          ))}
+                          {message.sources.map((src, i) => {
+                            const summaryKey = `${idx}-${i}`;
+                            const isSummaryOpen = expandedSummaryIndex === summaryKey;
+                            return (
+                              <div key={i} className="text-xs text-[#2c1810]/70">
+                                <div className="flex flex-wrap items-center gap-x-1">
+                                  <span className="font-medium">{src.sermonTitle}</span>
+                                  {src.speaker && <span>· {src.speaker}</span>}
+                                  {src.church && <span>· {src.church}</span>}
+                                  {src.summary && (
+                                    <button
+                                      onClick={() => setExpandedSummaryIndex(isSummaryOpen ? null : summaryKey)}
+                                      className="ml-1 text-[#c49a5c] hover:underline"
+                                    >
+                                      {isSummaryOpen ? 'Hide summary' : 'Summary'}
+                                    </button>
+                                  )}
+                                  {src.youtubeUrl && (
+                                    <a
+                                      href={src.youtubeUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="ml-1 text-[#c49a5c] hover:underline"
+                                    >
+                                      ▶ Watch
+                                    </a>
+                                  )}
+                                </div>
+                                {isSummaryOpen && src.summary && (
+                                  <p className="mt-2 p-3 bg-[#faf8f4] rounded-lg leading-relaxed text-[#2c1810]/80 border border-[#c49a5c]/15">
+                                    {src.summary}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </>

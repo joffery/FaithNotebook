@@ -433,7 +433,7 @@ async function searchChunks({ queryText, queryEmbedding, matchCount, filterVerse
 async function fetchSermonsByIds(ids, supabaseUrl, supabaseKey) {
   if (!ids.length) return [];
   const idList = ids.map((id) => `"${id}"`).join(',');
-  const url = `${supabaseUrl}/rest/v1/sermons?id=in.(${idList})&select=id,title,youtube_url`;
+  const url = `${supabaseUrl}/rest/v1/sermons?id=in.(${idList})&select=id,title,youtube_url,summary`;
   const res = await fetch(url, { headers: supabaseHeaders(supabaseKey) });
   if (!res.ok) return [];
   return res.json();
@@ -580,6 +580,7 @@ function buildSources(chunks, sermonMap) {
         ? `https://www.youtube.com/watch?v=${videoId}&t=${startSec}`
         : (sermon.youtube_url || ''),
       verseRefs: chunk.verse_references || [],
+      summary: sermon.summary || '',
     };
   });
 }

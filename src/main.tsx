@@ -11,6 +11,15 @@ window.onerror = function(message, source, lineno, colno, error) {
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
+// Register service worker (required for PWA install prompt on Android Chrome)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // SW registration failed — non-fatal
+    });
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Book } from 'lucide-react';
+import { Book, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CHURCH_OPTIONS } from '../constants/churches';
 import { RecoverAccountModal } from './RecoverAccountModal';
@@ -22,7 +22,7 @@ const toFriendlyAuthError = (message?: string) => {
   return 'Something went wrong. Please try again.';
 };
 
-export function AuthForm() {
+export function AuthForm({ onClose }: { onClose?: () => void } = {}) {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<'sign-in' | 'create-account'>('sign-in');
   const [username, setUsername] = useState('');
@@ -80,8 +80,16 @@ export function AuthForm() {
   };
 
   return (
-    <div className="min-h-screen bg-[#faf8f4] flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
+    <div className={onClose ? 'fixed inset-0 bg-black/50 flex items-center justify-center z-[100] px-4' : 'min-h-screen bg-[#faf8f4] flex items-center justify-center px-4'}>
+      <div className="w-full max-w-md bg-[#faf8f4] rounded-2xl p-6 relative">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-[#2c1810]/50 hover:text-[#2c1810] transition-colors"
+          >
+            <X size={22} />
+          </button>
+        )}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Book className="text-[#c49a5c]" size={32} />

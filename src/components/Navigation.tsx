@@ -13,6 +13,8 @@ type NavigationProps = {
   onOpenSermons: () => void;
   onOpenProfile: () => void;
   onOpenSearch: () => void;
+  onOpenSignIn?: () => void;
+  isAuthenticated?: boolean;
 };
 
 export function Navigation({
@@ -23,6 +25,8 @@ export function Navigation({
   onOpenSermons,
   onOpenProfile,
   onOpenSearch,
+  onOpenSignIn,
+  isAuthenticated = true,
 }: NavigationProps) {
   const [showBookPicker, setShowBookPicker] = useState(false);
   const [showChapterPicker, setShowChapterPicker] = useState(false);
@@ -51,26 +55,37 @@ export function Navigation({
 
   return (
     <>
-      <div className="bg-white/60 border-b border-[#c49a5c]/20 py-4 px-6 sticky top-0 backdrop-blur-sm z-40">
-        <div className="max-w-6xl mx-auto space-y-4">
+      <div className="bg-white/60 border-b border-[#c49a5c]/20 py-2 px-4 sticky top-0 backdrop-blur-sm z-40">
+        <div className="max-w-6xl mx-auto space-y-2">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <Book className="text-[#c49a5c] flex-shrink-0" size={24} />
             <h1 className="text-xl font-serif text-[#2c1810] leading-tight">Faith Notebook</h1>
           </div>
 
-          <button
-            onClick={onOpenProfile}
-            className="flex flex-shrink-0 items-center gap-2 px-3 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
-            aria-label="Open profile settings"
-          >
-            <ProfileAvatar
-              displayName={profileName}
-              avatarUrl={profile?.avatar_url}
-              size="sm"
-            />
-            <span className="hidden md:inline font-medium">{profileName}</span>
-          </button>
+          <div className="hidden sm:flex flex-shrink-0">
+            {isAuthenticated ? (
+              <button
+                onClick={onOpenProfile}
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
+                aria-label="Open profile settings"
+              >
+                <ProfileAvatar
+                  displayName={profileName}
+                  avatarUrl={profile?.avatar_url}
+                  size="sm"
+                />
+                <span className="hidden md:inline font-medium">{profileName}</span>
+              </button>
+            ) : (
+              <button
+                onClick={onOpenSignIn}
+                className="flex items-center gap-2 px-3 py-2 bg-[#c49a5c] text-white rounded-lg hover:bg-[#b38a4d] transition-colors font-medium"
+              >
+                Sign In
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="hidden sm:flex items-center gap-3 whitespace-nowrap">
@@ -173,7 +188,7 @@ export function Navigation({
         <div className="grid grid-cols-2 gap-3 sm:hidden">
           <button
             onClick={() => setShowBookPicker(true)}
-            className="flex items-center justify-between gap-2 px-4 py-3 bg-white border border-[#c49a5c]/30 rounded-xl text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
+            className="flex items-center justify-between gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-xl text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
           >
             <span className="font-medium truncate">{currentBook}</span>
             <span className="flex items-center gap-2 flex-shrink-0">
@@ -184,7 +199,7 @@ export function Navigation({
 
           <button
             onClick={() => setShowChapterPicker(true)}
-            className="flex items-center justify-between gap-2 px-4 py-3 bg-white border border-[#c49a5c]/30 rounded-xl text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
+            className="flex items-center justify-between gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-xl text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
           >
             <span className="font-medium truncate">Chapter {currentChapter}</span>
             <span className="flex items-center gap-2 flex-shrink-0">
@@ -194,10 +209,10 @@ export function Navigation({
           </button>
         </div>
 
-        <div className="sm:hidden mt-3">
+        <div className="sm:hidden mt-2">
           <button
             onClick={onOpenSearch}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-[#c49a5c]/30 rounded-xl text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white border border-[#c49a5c]/30 rounded-xl text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
           >
             <Search size={18} />
             <span className="font-medium">Search Bible</span>

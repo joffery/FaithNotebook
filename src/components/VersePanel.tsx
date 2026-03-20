@@ -240,6 +240,30 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       if (!fb.error) rows = fb.data || [];
     }
 
+    // Step 4: sermon_chunks fallback — this table has confirmed data (RAG works)
+    if (rows.length === 0) {
+      const { data: chunksData } = await supabase
+        .from('sermon_chunks')
+        .select('sermon_id, content, verse_references, start_seconds, sermons(id, title, speaker, church, youtube_url, summary, processed_at, youtube_published_at)')
+        .filter('verse_references::text', 'ilike', `%${book} ${chapter}%`)
+        .limit(8);
+
+      if (chunksData && chunksData.length > 0) {
+        const seenIds = new Set<string>();
+        rows = chunksData
+          .filter((c: any) => {
+            if (seenIds.has(c.sermon_id)) return false;
+            seenIds.add(c.sermon_id);
+            return true;
+          })
+          .map((c: any) => ({
+            ...(c.sermons || {}),
+            id: c.sermon_id,
+            _chunkContent: c.content,
+          }));
+      }
+    }
+
     const sortedRows = sortSermonsNewestFirst(rows);
 
     const groups = sortedRows
@@ -247,7 +271,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         const vis = parseVerseInsights(row.verse_insights);
         const exact = vis.find((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
         const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
-        const insightText = exact?.insight || chMatch?.insight || null;
+        const insightText = exact?.insight || chMatch?.insight || (row._chunkContent as string | undefined) || null;
         const summary = trimToSentences(row.summary || '', 3);
         const matchType: SermonGroup['matchType'] = exact ? 'exact' : 'broader';
         const matchedReference = exact?.verse || chMatch?.verse || null;
@@ -917,7 +941,11 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
           {activeTab === 'community' && (
             <div className="space-y-4">
-              {communityNotes.length === 0 ? (
+              {!user ? (
+                <div className="text-center py-10">
+                  <p className="text-[#2c1810]/60 mb-1">Sign in to see what other disciples have shared about this verse.</p>
+                </div>
+              ) : communityNotes.length === 0 ? (
                 <p className="text-[#2c1810]/60 text-center py-8">
                   No community notes for this verse yet.
                 </p>
@@ -960,62 +988,70 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
           {activeTab === 'my-notes' && (
             <div>
-              <div className="mb-4 rounded-xl border border-[#c49a5c]/18 bg-white/55 px-4 py-3">
-                <p className="text-sm font-medium text-[#2c1810]">Write your own reflection on this Scripture.</p>
-                <p className="mt-1 text-sm text-[#2c1810]/62 leading-relaxed">
-                  Keep it private, or share it so other disciples can be encouraged by what you learned from this verse.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={togglePublic}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${
-                      isPublic
-                        ? 'bg-[#c49a5c]/20 text-[#c49a5c]'
-                        : 'bg-[#2c1810]/10 text-[#2c1810]/60'
-                    }`}
-                  >
-                    {isPublic ? <Unlock size={16} /> : <Lock size={16} />}
-                    <span className="text-sm font-medium">
-                      {isPublic ? 'Shared' : 'Private'}
-                    </span>
-                  </button>
-                  {/* explicit save button to avoid loss when user refreshes before blur */}
-                  <button
-                    onClick={() => { void saveMyNote(); }}
-                    disabled={saving || deleting}
-                    className="sm:ml-4 px-3 py-1.5 bg-[#c49a5c] text-white rounded-lg text-sm disabled:opacity-50"
-                  >
-                    {saving ? 'Saving…' : 'Save'}
-                  </button>
-                  {noteId && (
-                    <button
-                      onClick={() => { void deleteMyNote(); }}
-                      disabled={saving || deleting}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-red-200 bg-white text-red-600 text-sm hover:bg-red-50 disabled:opacity-50"
-                    >
-                      <Trash2 size={15} />
-                      <span>{deleting ? 'Deleting…' : 'Delete'}</span>
-                    </button>
-                  )}
+              {!user ? (
+                <div className="text-center py-10">
+                  <p className="text-[#2c1810]/60 mb-1">Sign in to write and save your own notes on this verse.</p>
                 </div>
-                {(saving || deleting) && (
-                  <p className="text-sm text-[#c49a5c]">{deleting ? 'Deleting…' : 'Saving...'}</p>
-                )}
-                {!saving && !deleting && myNote && !saveError && <p className="text-sm text-[#2c1810]/60">Saved</p>}
-              </div>
-              {saveError && (
-                <p className="text-sm text-red-500 mb-3">{saveError}</p>
+              ) : (
+                <>
+                  <div className="mb-4 rounded-xl border border-[#c49a5c]/18 bg-white/55 px-4 py-3">
+                    <p className="text-sm font-medium text-[#2c1810]">Write your own reflection on this Scripture.</p>
+                    <p className="mt-1 text-sm text-[#2c1810]/62 leading-relaxed">
+                      Keep it private, or share it so other disciples can be encouraged by what you learned from this verse.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={togglePublic}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors ${
+                          isPublic
+                            ? 'bg-[#c49a5c]/20 text-[#c49a5c]'
+                            : 'bg-[#2c1810]/10 text-[#2c1810]/60'
+                        }`}
+                      >
+                        {isPublic ? <Unlock size={16} /> : <Lock size={16} />}
+                        <span className="text-sm font-medium">
+                          {isPublic ? 'Shared' : 'Private'}
+                        </span>
+                      </button>
+                      {/* explicit save button to avoid loss when user refreshes before blur */}
+                      <button
+                        onClick={() => { void saveMyNote(); }}
+                        disabled={saving || deleting}
+                        className="sm:ml-4 px-3 py-1.5 bg-[#c49a5c] text-white rounded-lg text-sm disabled:opacity-50"
+                      >
+                        {saving ? 'Saving…' : 'Save'}
+                      </button>
+                      {noteId && (
+                        <button
+                          onClick={() => { void deleteMyNote(); }}
+                          disabled={saving || deleting}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-red-200 bg-white text-red-600 text-sm hover:bg-red-50 disabled:opacity-50"
+                        >
+                          <Trash2 size={15} />
+                          <span>{deleting ? 'Deleting…' : 'Delete'}</span>
+                        </button>
+                      )}
+                    </div>
+                    {(saving || deleting) && (
+                      <p className="text-sm text-[#c49a5c]">{deleting ? 'Deleting…' : 'Saving...'}</p>
+                    )}
+                    {!saving && !deleting && myNote && !saveError && <p className="text-sm text-[#2c1810]/60">Saved</p>}
+                  </div>
+                  {saveError && (
+                    <p className="text-sm text-red-500 mb-3">{saveError}</p>
+                  )}
+                  <textarea
+                    value={myNote}
+                    onChange={(e) => setMyNote(e.target.value)}
+                    onBlur={() => { void saveMyNote(); }}
+                    disabled={deleting}
+                    placeholder="Write what stands out to you, what you want to obey, or what you want to remember from this verse..."
+                    className="w-full h-64 p-4 bg-white/60 border border-[#c49a5c]/20 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50 font-serif leading-relaxed resize-none"
+                  />
+                </>
               )}
-              <textarea
-                value={myNote}
-                onChange={(e) => setMyNote(e.target.value)}
-                onBlur={() => { void saveMyNote(); }}
-                disabled={deleting}
-                placeholder="Write what stands out to you, what you want to obey, or what you want to remember from this verse..."
-                className="w-full h-64 p-4 bg-white/60 border border-[#c49a5c]/20 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50 font-serif leading-relaxed resize-none"
-              />
             </div>
           )}
         </div>
