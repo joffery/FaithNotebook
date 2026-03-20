@@ -83,7 +83,7 @@ export function AuthForm({ onClose }: { onClose?: () => void } = {}) {
     <div
       className={
         onClose
-          ? 'fixed inset-0 z-[100] bg-black/50 overflow-y-auto'
+          ? 'fixed inset-0 z-[100] bg-black/50 overflow-y-auto overscroll-contain'
           : 'min-h-screen bg-[#faf8f4] flex items-start sm:items-center justify-center px-4'
       }
     >

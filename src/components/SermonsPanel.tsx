@@ -220,8 +220,8 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50">
-        <div className="bg-[#faf8f4] w-full max-w-2xl rounded-t-2xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[85vh] flex flex-col">
+      <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 overscroll-contain">
+        <div className="bg-[#faf8f4] w-full max-w-2xl rounded-t-2xl shadow-2xl h-[92dvh] sm:h-auto sm:max-h-[85vh] flex flex-col overscroll-contain">
         <div className="flex items-center justify-between px-4 py-4 sm:p-6 border-b border-[#c49a5c]/20">
           <h3 className="text-lg sm:text-xl font-serif text-[#2c1810]">Sermons</h3>
           <button
@@ -267,7 +267,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 py-3 sm:p-4 space-y-2">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 space-y-2">
           {loading ? (
             <p className="text-center text-[#2c1810]/60 py-8">Loading sermons…</p>
           ) : filtered.length === 0 ? (

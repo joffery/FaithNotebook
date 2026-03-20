@@ -81,8 +81,8 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
     : false;
 
   return (
-    <div className="fixed inset-0 z-[75] bg-black/45 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl rounded-2xl bg-[#faf8f4] shadow-2xl border border-[#c49a5c]/20 max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-[75] bg-black/45 flex items-center justify-center p-4 overscroll-contain">
+      <div className="w-full max-w-2xl rounded-2xl bg-[#faf8f4] shadow-2xl border border-[#c49a5c]/20 max-h-[90vh] overflow-hidden flex flex-col overscroll-contain">
         <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-[#c49a5c]/20">
           <div>
             <h2 className="text-xl font-serif text-[#2c1810]">Bible Search</h2>
@@ -114,7 +114,7 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-5 space-y-6">
           {referenceMatch && (
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45">

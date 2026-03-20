@@ -87,8 +87,9 @@ export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettings
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/45 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-[#faf8f4] shadow-2xl border border-[#c49a5c]/20 p-6 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-[60] bg-black/45 overflow-y-auto overscroll-contain">
+      <div className="min-h-full sm:min-h-0 flex items-start sm:items-center justify-center p-0 sm:p-4">
+      <div className="w-full max-w-lg rounded-none sm:rounded-2xl bg-[#faf8f4] shadow-2xl border-0 sm:border border-[#c49a5c]/20 p-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] max-h-none sm:max-h-[90vh] overflow-y-auto overscroll-contain">
         <div className="flex items-start justify-between gap-4 mb-5">
           <div className="flex items-center gap-3">
             <ProfileAvatar
@@ -322,6 +323,7 @@ export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettings
             Sign Out
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

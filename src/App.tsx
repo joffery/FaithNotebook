@@ -81,6 +81,49 @@ function App() {
   const mobileActiveTab: 'read' | 'sermons' | 'ask' | 'profile' =
     showProfileSettings || showMyNotes ? 'profile' : showAIChat ? 'ask' : showSermons ? 'sermons' : 'read';
 
+  const hasBlockingOverlay =
+    showAIChat ||
+    showSermons ||
+    showAccountSetupPrompt ||
+    showProfileSettings ||
+    showMyNotes ||
+    showBibleSearch ||
+    showAuthModal;
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !hasBlockingOverlay) return;
+
+    const scrollY = window.scrollY;
+    const previousBodyStyles = {
+      overflow: document.body.style.overflow,
+      position: document.body.style.position,
+      top: document.body.style.top,
+      left: document.body.style.left,
+      right: document.body.style.right,
+      width: document.body.style.width,
+    };
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+
+    return () => {
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousBodyStyles.overflow;
+      document.body.style.position = previousBodyStyles.position;
+      document.body.style.top = previousBodyStyles.top;
+      document.body.style.left = previousBodyStyles.left;
+      document.body.style.right = previousBodyStyles.right;
+      document.body.style.width = previousBodyStyles.width;
+      window.scrollTo(0, scrollY);
+    };
+  }, [hasBlockingOverlay]);
+
   if (loading || (user && profileLoading && !profile)) {
     return (
       <div className="min-h-screen bg-[#faf8f4] flex items-center justify-center">

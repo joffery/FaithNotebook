@@ -220,7 +220,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center sm:p-4">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center sm:p-4 overscroll-contain">
       <div className="bg-gradient-to-b from-[#f5e6d3] to-[#e8d4ba] w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[90vh] flex flex-col sm:rounded-lg shadow-2xl">
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#c49a5c]/20">
           <h2 className="text-2xl font-serif text-[#2c1810]">AI Bible Study Assistant</h2>
@@ -232,7 +232,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-4 p-4 sm:p-5">
+        <div className="flex-1 overflow-y-auto overscroll-contain space-y-4 p-4 sm:p-5">
           {messages.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-[#2c1810]/60 mb-2 text-lg">
