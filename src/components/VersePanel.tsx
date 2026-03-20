@@ -203,49 +203,55 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     const chapterPrefix = `${book} ${chapter}:`;
     const baseFields = 'id, title, speaker, church, youtube_url, verse_insights, summary, verses, processed_at';
     const fieldsWithPublishedAt = `${baseFields}, youtube_published_at`;
+    let { data, error } = await supabase
+      .from('sermons')
+      .select(fieldsWithPublishedAt);
 
-    const runQuery = async (q: any) => {
-      let { data, error } = await q.select(fieldsWithPublishedAt).limit(30);
-      if (error && error.message?.toLowerCase().includes('youtube_published_at')) {
-        const fb = await q.select(baseFields).limit(30);
-        data = fb.data; error = fb.error;
-      }
-      return { data, error };
-    };
-
-    // Step 1: exact verse match via contains on verses TEXT[]
-    let { data, error } = await runQuery(
-      supabase.from('sermons').contains('verses', [verseRef])
-    );
+    if (error && error.message?.toLowerCase().includes('youtube_published_at')) {
+      const fallback = await supabase
+        .from('sermons')
+        .select(baseFields);
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
-      console.error('VersePanel exact query error:', error);
+      console.error('VersePanel sermon query error:', error);
+      setSermonGroups([]);
+      return;
     }
 
-    let rows: any[] = data || [];
+    const allRows = sortSermonsNewestFirst(data || []);
 
-    // Step 2: chapter-level fallback — verses array cast to text, ilike 'Book Chapter:%'
-    if (rows.length === 0) {
-      const fb = await runQuery(
-        supabase.from('sermons').filter('verses::text', 'ilike', `%${chapterPrefix}%`)
+    console.log('VersePanel sermon query refs:', {
+      verseRef,
+      chapterPrefix,
+      totalRows: allRows.length,
+    });
+    console.log('VersePanel sermon query data:', allRows);
+
+    let rows = allRows.filter((row: any) => {
+      const vis = parseVerseInsights(row.verse_insights);
+      const exact = vis.some((vi: { verse: string; insight: string }) =>
+        !!vi?.insight?.trim() && matchesVerseReference(vi.verse, book, chapter, verse)
       );
-      if (!fb.error) rows = fb.data || [];
-    }
-
-    // Step 3: if verses column is unpopulated, search verse_insights JSONB text
-    if (rows.length === 0) {
-      const fb = await runQuery(
-        supabase.from('sermons').filter('verse_insights::text', 'ilike', `%${chapterPrefix}%`)
+      const broader = vis.some((vi: { verse: string; insight: string }) =>
+        !!vi?.insight?.trim() && typeof vi.verse === 'string' && vi.verse.startsWith(chapterPrefix)
       );
-      if (!fb.error) rows = fb.data || [];
-    }
+
+      return exact || broader;
+    });
 
     const mapRowsToGroups = (rawRows: any[]): SermonGroup[] =>
       sortSermonsNewestFirst(rawRows)
         .map((row: any): SermonGroup | null => {
           const vis = parseVerseInsights(row.verse_insights);
-          const exact = vis.find((vi: { verse: string }) => matchesVerseReference(vi.verse, book, chapter, verse));
-          const chMatch = vis.find((vi: { verse: string }) => vi.verse?.startsWith(chapterPrefix));
+          const exact = vis.find((vi: { verse: string; insight: string }) =>
+            !!vi?.insight?.trim() && matchesVerseReference(vi.verse, book, chapter, verse)
+          );
+          const chMatch = vis.find((vi: { verse: string; insight: string }) =>
+            !!vi?.insight?.trim() && vi.verse?.startsWith(chapterPrefix)
+          );
           const insightText = exact?.insight || chMatch?.insight || (row._chunkContent as string | undefined) || null;
           const summary = trimToSentences(row.summary || '', 3);
           const matchType: SermonGroup['matchType'] = exact ? 'exact' : 'broader';
@@ -270,30 +276,51 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         .filter((group): group is SermonGroup => group !== null);
 
     let groups = mapRowsToGroups(rows);
+    console.log('VersePanel sermon matched rows:', rows);
+    console.log('VersePanel sermon groups:', groups);
 
     // Step 4: sermon_chunks fallback — runs when steps 1-3 found rows but none had
-    // verse_insights or summary (pipeline analysis not yet run for this book/chapter).
+    // verse_insights or summary (pipeline Gemini analysis not yet run).
+    // Uses two separate queries to avoid embedded join FK dependency.
     if (groups.length === 0) {
-      const { data: chunksData } = await supabase
+      const { data: chunksData, error: chunksError } = await supabase
         .from('sermon_chunks')
-        .select('sermon_id, content, verse_references, start_seconds, sermons(id, title, speaker, church, youtube_url, summary, processed_at, youtube_published_at)')
+        .select('sermon_id, content, verse_references, start_seconds')
         .filter('verse_references::text', 'ilike', `%${book} ${chapter}%`)
         .limit(8);
 
-      if (chunksData && chunksData.length > 0) {
+      if (!chunksError && chunksData && chunksData.length > 0) {
+        // Deduplicate by sermon_id, pick the first chunk per sermon
         const seenIds = new Set<string>();
-        const chunkRows = chunksData
-          .filter((c: any) => {
-            if (seenIds.has(c.sermon_id)) return false;
+        const bestChunks: Record<string, any> = {};
+        for (const c of chunksData) {
+          if (!seenIds.has(c.sermon_id)) {
             seenIds.add(c.sermon_id);
-            return true;
-          })
-          .map((c: any) => ({
-            ...(c.sermons || {}),
-            id: c.sermon_id,
-            _chunkContent: c.content,
-          }));
+            bestChunks[c.sermon_id] = c;
+          }
+        }
+        const sermonIds = Object.keys(bestChunks);
+
+        // Fetch sermon metadata separately (no embedded join needed)
+        const { data: sermonsData } = await supabase
+          .from('sermons')
+          .select('id, title, speaker, church, youtube_url, summary, processed_at, youtube_published_at')
+          .in('id', sermonIds);
+
+        const sermonById: Record<string, any> = {};
+        for (const s of (sermonsData || [])) {
+          sermonById[s.id] = s;
+        }
+
+        const chunkRows = sermonIds.map((sid) => ({
+          ...(sermonById[sid] || {}),
+          id: sid,
+          _chunkContent: bestChunks[sid].content,
+        }));
+
         groups = mapRowsToGroups(chunkRows);
+      } else if (chunksError) {
+        console.error('VersePanel sermon_chunks fallback error:', chunksError);
       }
     }
 
