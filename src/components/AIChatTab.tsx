@@ -24,9 +24,9 @@ type Message = {
 };
 
 const SUGGESTED_QUESTIONS = [
-  'Is baptism necessary?',
-  'What does Acts 2 teach about salvation?',
-  'How do sermons explain discipleship?',
+  'What does the Bible say about baptism?',
+  'What is repentance?',
+  'What does it mean to be a disciple?',
 ];
 
 const AI_CHAT_SESSION_KEY = 'faith-notebook-ai-chat-session';
@@ -236,10 +236,10 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
           {messages.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-[#2c1810]/60 mb-2 text-lg">
-                Ask about the Bible, sermons, or discipleship
+                Ask a Bible question and get a clear starting point
               </p>
               <p className="text-[#2c1810]/45 text-sm mb-5 max-w-md mx-auto">
-                Start with a simple question and the assistant will answer from Scripture and sermon material.
+                Start with one of these common questions, or ask your own. The assistant answers from Scripture and sermon material.
               </p>
               <div className="max-w-lg mx-auto flex flex-wrap justify-center gap-2">
                 {SUGGESTED_QUESTIONS.map((question) => (
