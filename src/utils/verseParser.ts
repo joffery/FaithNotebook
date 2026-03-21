@@ -1,3 +1,5 @@
+import { bibleBooks } from '../data/bibleBooks';
+
 export type ParsedVerse = {
   book: string;
   chapter: number;
@@ -5,17 +7,24 @@ export type ParsedVerse = {
 };
 
 const BOOK_NAME_ALIASES: Record<string, string> = {
-  Psalm: 'Psalms',
-  Psalms: 'Psalms',
-  Proverbs: 'Proverbs',
-  Song: 'Song of Solomon',
-  'Song of Songs': 'Song of Solomon',
-  Canticles: 'Song of Solomon',
+  psalm: 'Psalms',
+  psalms: 'Psalms',
+  proverbs: 'Proverbs',
+  song: 'Song of Solomon',
+  'song of songs': 'Song of Solomon',
+  canticles: 'Song of Solomon',
 };
 
+const CANONICAL_BOOK_NAMES = Object.fromEntries(
+  bibleBooks.map((book) => [book.name.toLowerCase(), book.name])
+);
+
 export function normalizeBibleBookName(book: string): string {
-  const trimmed = book.trim();
-  return BOOK_NAME_ALIASES[trimmed] || trimmed;
+  const trimmed = book.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return trimmed;
+
+  const normalizedKey = trimmed.toLowerCase();
+  return BOOK_NAME_ALIASES[normalizedKey] || CANONICAL_BOOK_NAMES[normalizedKey] || trimmed;
 }
 
 export function parseVerseReference(verseRef: string): ParsedVerse[] {

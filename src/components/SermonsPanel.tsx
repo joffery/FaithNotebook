@@ -5,6 +5,7 @@ import { ensureBibleChapter } from '../data/bibleText';
 import { parseVerseReference } from '../utils/verseParser';
 import { parseSermonVerseRefs } from '../utils/sermonReferences';
 import { formatSermonDate, formatSermonMonth, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
+import { CHURCH_OPTIONS } from '../constants/churches';
 
 type SermonsPanelProps = {
   onClose: () => void;
@@ -61,12 +62,9 @@ const parseTags = (value: unknown): string[] => {
   return [];
 };
 
-const REGIONS = [
-  { label: 'All', value: '' },
-  { label: 'Tampa Bay', value: 'tampa_bay' },
-  { label: 'Orlando', value: 'orlando' },
-  { label: 'Miami', value: 'miami' },
-  { label: 'Gainesville', value: 'gainesville' },
+const CHURCH_FILTER_OPTIONS = [
+  { label: 'All churches', value: '' },
+  ...CHURCH_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
 ];
 
 const PAGE_SIZE = 20;
@@ -90,6 +88,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
+  const [expandedInsightCardIds, setExpandedInsightCardIds] = useState<Set<string>>(new Set());
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -199,6 +198,18 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
     }
   };
 
+  const toggleAllInsights = (id: string) => {
+    setExpandedInsightCardIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageStart = (currentPage - 1) * PAGE_SIZE + 1;
@@ -233,31 +244,35 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
         </div>
 
         <div className="px-3 py-3 sm:p-4 border-b border-[#c49a5c]/20 space-y-3">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#2c1810]/40" />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search title, speaker, church, topic, or scripture…"
-              className="w-full pl-9 pr-4 py-2.5 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
-            />
-          </div>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:items-end">
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#2c1810]/40" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search title, speaker, church, topic, or scripture…"
+                className="w-full pl-9 pr-4 py-2.5 bg-white border border-[#c49a5c]/30 rounded-lg text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
+              />
+            </div>
 
-          <div className="flex gap-2 flex-wrap">
-            {REGIONS.map(r => (
-              <button
-                key={r.value}
-                onClick={() => setRegion(r.value)}
-                className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                  region === r.value
-                    ? 'bg-[#c49a5c] text-white'
-                    : 'bg-white border border-[#c49a5c]/30 text-[#2c1810] hover:bg-[#c49a5c]/10'
-                }`}
+            <div>
+              <label htmlFor="sermon-church-filter" className="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-[#2c1810]/45">
+                Church
+              </label>
+              <select
+                id="sermon-church-filter"
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                className="w-full rounded-lg border border-[#c49a5c]/30 bg-white px-3 py-2.5 text-sm text-[#2c1810] focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50"
               >
-                {r.label}
-              </button>
-            ))}
+                {CHURCH_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {!loading && filtered.length > 0 && (
@@ -290,6 +305,8 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                     .filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0);
                   const sermonDate = formatSermonDate(getPrimarySermonDate(sermon));
                   const summaryText = sermon.summary?.trim() || sermon.transcript_preview?.trim() || '';
+                  const showingAllInsights = expandedInsightCardIds.has(sermon.id);
+                  const visibleInsights = showingAllInsights ? verseInsights : verseInsights.slice(0, 3);
 
                   return (
                     <div
@@ -363,7 +380,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                             <div>
                               <p className="text-xs font-semibold text-[#2c1810]/50 uppercase tracking-wide mb-2">Verse Insights</p>
                               <ul className="space-y-2">
-                                {verseInsights.map((vi, i) => (
+                                {visibleInsights.map((vi, i) => (
                                   <li key={i} className="text-sm text-[#2c1810]">
                                     <p className="font-medium text-[#c49a5c]">{vi.verse}</p>
                                     {verseTexts[vi.verse] && (
@@ -375,6 +392,15 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                                   </li>
                                 ))}
                               </ul>
+                              {verseInsights.length > 3 && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAllInsights(sermon.id)}
+                                  className="mt-3 text-xs font-medium text-[#8c6430] hover:text-[#6f4f22] hover:underline"
+                                >
+                                  {showingAllInsights ? 'Show fewer insights' : `Show all ${verseInsights.length} insights`}
+                                </button>
+                              )}
                             </div>
                           )}
 

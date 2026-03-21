@@ -17,12 +17,7 @@ import { normalizeBibleBookName } from './utils/verseParser';
 const LAST_READING_POSITION_KEY = 'faith-notebook-last-reading-position';
 
 function App() {
-  console.log('App rendering');
   const { user, profile, loading, profileLoading, needsAccountSetup } = useAuth();
-
-  useEffect(() => {
-    console.log('App mounted, user=', user);
-  }, [user]);
   const [currentBook, setCurrentBook] = useState(() => {
     if (typeof window === 'undefined') return 'Matthew';
     try {
@@ -51,6 +46,7 @@ function App() {
   const [showBibleSearch, setShowBibleSearch] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedVerseFromApp, setSelectedVerseFromApp] = useState<number | null>(null);
+  const [statusBanner, setStatusBanner] = useState<string | null>(null);
 
   useEffect(() => {
     if (needsAccountSetup) {
@@ -72,6 +68,26 @@ function App() {
       // Ignore storage failures and keep navigation working.
     }
   }, [currentBook, currentChapter]);
+
+  useEffect(() => {
+    if (user) {
+      setShowAuthModal(false);
+      return;
+    }
+
+    setShowProfileSettings(false);
+    setShowMyNotes(false);
+  }, [user]);
+
+  useEffect(() => {
+    if (!statusBanner) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setStatusBanner(null);
+    }, 2600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [statusBanner]);
 
   const handleNavigate = (book: string, chapter: number) => {
     setCurrentBook(normalizeBibleBookName(book));
@@ -147,6 +163,14 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#faf8f4]">
+      {statusBanner && (
+        <div className="fixed left-1/2 top-4 z-[120] -translate-x-1/2 px-4">
+          <div className="rounded-full border border-[#c49a5c]/25 bg-[#2c1810] px-4 py-2 text-sm text-white shadow-lg">
+            {statusBanner}
+          </div>
+        </div>
+      )}
+
       <Navigation
         currentBook={currentBook}
         currentChapter={currentChapter}
@@ -187,6 +211,11 @@ function App() {
       {showProfileSettings && (
         <ProfileSettingsModal
           onClose={() => setShowProfileSettings(false)}
+          onSignedOut={() => {
+            setShowProfileSettings(false);
+            setShowMyNotes(false);
+            setStatusBanner('Signed out successfully.');
+          }}
           onOpenMyNotes={() => {
             setShowProfileSettings(false);
             setShowMyNotes(true);
@@ -256,7 +285,10 @@ function App() {
       <InstallPrompt />
 
       {showAuthModal && (
-        <AuthForm onClose={() => setShowAuthModal(false)} />
+        <AuthForm
+          onClose={() => setShowAuthModal(false)}
+          onAuthenticated={(message) => setStatusBanner(message)}
+        />
       )}
     </div>
   );

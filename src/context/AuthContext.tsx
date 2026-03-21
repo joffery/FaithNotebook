@@ -64,7 +64,7 @@ interface AuthContextType {
   completeAccountSetup: (input: ProfileDetailsInput) => Promise<{ error: Error | null }>;
   updateProfileDetails: (input: ProfileDetailsInput) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
-  signOut: () => Promise<void>;
+  signOut: () => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -78,7 +78,7 @@ const AuthContext = createContext<AuthContextType>({
   completeAccountSetup: async () => ({ error: null }),
   updateProfileDetails: async () => ({ error: null }),
   updatePassword: async () => ({ error: null }),
-  signOut: async () => {},
+  signOut: async () => ({ error: null }),
 });
 
 export const useAuth = () => {
@@ -387,7 +387,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error('Failed to sign out:', error);
+      return { error: new Error('We could not sign you out just now. Please try again.') };
+    }
+
+    setUser(null);
+    setProfile(null);
+    setProfileLoading(false);
+    return { error: null };
   };
 
   const needsAccountSetup =

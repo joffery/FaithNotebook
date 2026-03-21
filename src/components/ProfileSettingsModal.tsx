@@ -7,9 +7,10 @@ import { ProfileAvatar } from './ProfileAvatar';
 type ProfileSettingsModalProps = {
   onClose: () => void;
   onOpenMyNotes: () => void;
+  onSignedOut?: () => void;
 };
 
-export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettingsModalProps) {
+export function ProfileSettingsModal({ onClose, onOpenMyNotes, onSignedOut }: ProfileSettingsModalProps) {
   const {
     profile,
     profileLoading,
@@ -28,6 +29,8 @@ export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettings
   const [passwordMessage, setPasswordMessage] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [signOutError, setSignOutError] = useState('');
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     setDisplayName(profile?.display_name || profile?.username || '');
@@ -84,6 +87,22 @@ export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettings
     setNewPassword('');
     setConfirmPassword('');
     setSavingPassword(false);
+  };
+
+  const handleSignOut = async () => {
+    setSignOutError('');
+    setSigningOut(true);
+
+    const { error } = await signOut();
+    if (error) {
+      setSignOutError(error.message || 'Please try again.');
+      setSigningOut(false);
+      return;
+    }
+
+    setSigningOut(false);
+    onSignedOut?.();
+    onClose();
   };
 
   return (
@@ -315,13 +334,22 @@ export function ProfileSettingsModal({ onClose, onOpenMyNotes }: ProfileSettings
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={signOut}
-            className="w-full rounded-lg border border-[#c49a5c]/25 bg-white px-4 py-3 text-sm font-medium text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors"
-          >
-            Sign Out
-          </button>
+          <div className="space-y-2">
+            {signOutError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                <p className="text-sm text-red-700">{signOutError}</p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => { void handleSignOut(); }}
+              disabled={signingOut}
+              className="w-full rounded-lg border border-[#c49a5c]/25 bg-white px-4 py-3 text-sm font-medium text-[#2c1810] hover:bg-[#c49a5c]/10 transition-colors disabled:opacity-50"
+            >
+              {signingOut ? 'Signing Out...' : 'Sign Out'}
+            </button>
+          </div>
         </div>
       </div>
       </div>

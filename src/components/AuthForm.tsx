@@ -22,13 +22,19 @@ const toFriendlyAuthError = (message?: string) => {
   return 'Something went wrong. Please try again.';
 };
 
-export function AuthForm({ onClose }: { onClose?: () => void } = {}) {
+type AuthFormProps = {
+  onClose?: () => void;
+  onAuthenticated?: (message: string) => void;
+};
+
+export function AuthForm({ onClose, onAuthenticated }: AuthFormProps = {}) {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<'sign-in' | 'create-account'>('sign-in');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [churchAffiliation, setChurchAffiliation] = useState('');
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
 
@@ -42,6 +48,7 @@ export function AuthForm({ onClose }: { onClose?: () => void } = {}) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
     setLoading(true);
 
     try {
@@ -72,6 +79,14 @@ export function AuthForm({ onClose }: { onClose?: () => void } = {}) {
       }
 
       localStorage.setItem('lastUsername', cleanUsername);
+      const nextSuccessMessage =
+        mode === 'sign-in'
+          ? 'Signed in successfully.'
+          : 'Account created and signed in successfully.';
+
+      setSuccessMessage(nextSuccessMessage);
+      onAuthenticated?.(nextSuccessMessage);
+      onClose?.();
     } catch (err: any) {
       setError(err?.message || 'An error occurred');
     } finally {
@@ -204,6 +219,12 @@ export function AuthForm({ onClose }: { onClose?: () => void } = {}) {
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                 <p className="text-sm text-red-800">{error}</p>
+              </div>
+            )}
+
+            {successMessage && !onClose && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-sm text-green-800">{successMessage}</p>
               </div>
             )}
 

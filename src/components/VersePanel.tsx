@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { getBibleChapter, ensureBibleChapter } from '../data/bibleText';
 import { parseVerseReference } from '../utils/verseParser';
 import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
+import { buildTimestampedYouTubeUrl, formatVideoTimestamp } from '../utils/youtube';
+import { buildFeedbackKey, hashFeedbackValue } from '../utils/feedback';
 import { ProfileAvatar } from './ProfileAvatar';
 
 type VersePanelProps = {
@@ -34,12 +36,19 @@ type SermonGroup = {
   speaker: string;
   church: string;
   youtubeUrl: string;
+  startSeconds?: number | null;
   summary: string;
   relevantText: string | null;
   isSummaryFallback: boolean;
   matchType: 'exact' | 'broader';
   matchedReference: string | null;
   youtubePublishedAt?: string | null;
+};
+
+type SermonChunkTimingRow = {
+  sermon_id: string;
+  verse_references: string[] | null;
+  start_seconds: number | null;
 };
 
 function trimToSentences(text: string, max: number): string {
@@ -74,6 +83,61 @@ const normalizeVerseReference = (value: string) =>
 const matchesVerseReference = (candidate: string, book: string, chapter: number, verse: number) => {
   const parsed = parseVerseReference(normalizeVerseReference(candidate));
   return parsed.some((item) => item.book === book && item.chapter === chapter && item.verse === verse);
+};
+
+const getMatchingChunkPriority = (
+  verseReferences: string[] | null | undefined,
+  book: string,
+  chapter: number,
+  verse: number
+) => {
+  const refs = Array.isArray(verseReferences) ? verseReferences : [];
+  if (refs.some((ref) => typeof ref === 'string' && matchesVerseReference(ref, book, chapter, verse))) {
+    return 0;
+  }
+
+  const chapterPrefix = `${book} ${chapter}:`;
+  if (refs.some((ref) => typeof ref === 'string' && normalizeVerseReference(ref).startsWith(chapterPrefix))) {
+    return 1;
+  }
+
+  return null;
+};
+
+const buildMatchingStartSecondsMap = (
+  rows: SermonChunkTimingRow[],
+  book: string,
+  chapter: number,
+  verse: number
+) => {
+  const bestBySermon = new Map<string, { startSeconds: number; priority: number }>();
+
+  rows.forEach((row) => {
+    if (typeof row.start_seconds !== 'number' || !Number.isFinite(row.start_seconds)) {
+      return;
+    }
+
+    const priority = getMatchingChunkPriority(row.verse_references, book, chapter, verse);
+    if (priority === null) {
+      return;
+    }
+
+    const previous = bestBySermon.get(row.sermon_id);
+    if (
+      !previous ||
+      priority < previous.priority ||
+      (priority === previous.priority && row.start_seconds < previous.startSeconds)
+    ) {
+      bestBySermon.set(row.sermon_id, {
+        startSeconds: row.start_seconds,
+        priority,
+      });
+    }
+  });
+
+  return new Map(
+    Array.from(bestBySermon.entries()).map(([sermonId, value]) => [sermonId, value.startSeconds])
+  );
 };
 
 const isMissingProfileFieldError = (error: unknown) => {
@@ -222,13 +286,23 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     }
 
     const allRows = sortSermonsNewestFirst(data || []);
+    let startSecondsBySermon = new Map<string, number>();
+    const { data: timingRows, error: timingError } = await supabase
+      .from('sermon_chunks')
+      .select('sermon_id, verse_references, start_seconds')
+      .filter('verse_references::text', 'ilike', `%${book} ${chapter}%`)
+      .limit(250);
 
-    console.log('VersePanel sermon query refs:', {
-      verseRef,
-      chapterPrefix,
-      totalRows: allRows.length,
-    });
-    console.log('VersePanel sermon query data:', allRows);
+    if (timingError) {
+      console.error('VersePanel sermon timing query error:', timingError);
+    } else {
+      startSecondsBySermon = buildMatchingStartSecondsMap(
+        (timingRows || []) as SermonChunkTimingRow[],
+        book,
+        chapter,
+        verse
+      );
+    }
 
     let rows = allRows.filter((row: any) => {
       const vis = parseVerseInsights(row.verse_insights);
@@ -256,6 +330,10 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
           const summary = trimToSentences(row.summary || '', 3);
           const matchType: SermonGroup['matchType'] = exact ? 'exact' : 'broader';
           const matchedReference = exact?.verse || chMatch?.verse || null;
+          const matchedStartSeconds =
+            typeof row._startSeconds === 'number'
+              ? row._startSeconds
+              : startSecondsBySermon.get(row.id);
 
           if (!insightText && !summary) return null;
 
@@ -264,7 +342,8 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
             title: row.title || 'Unknown Sermon',
             speaker: row.speaker || '',
             church: row.church || '',
-            youtubeUrl: row.youtube_url || '',
+            youtubeUrl: buildTimestampedYouTubeUrl(row.youtube_url || '', matchedStartSeconds) || row.youtube_url || '',
+            startSeconds: typeof matchedStartSeconds === 'number' ? matchedStartSeconds : null,
             summary,
             relevantText: insightText,
             isSummaryFallback: !insightText,
@@ -276,8 +355,6 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         .filter((group): group is SermonGroup => group !== null);
 
     let groups = mapRowsToGroups(rows);
-    console.log('VersePanel sermon matched rows:', rows);
-    console.log('VersePanel sermon groups:', groups);
 
     // Step 4: sermon_chunks fallback — runs when steps 1-3 found rows but none had
     // verse_insights or summary (pipeline Gemini analysis not yet run).
@@ -316,6 +393,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
           ...(sermonById[sid] || {}),
           id: sid,
           _chunkContent: bestChunks[sid].content,
+          _startSeconds: bestChunks[sid].start_seconds,
         }));
 
         groups = mapRowsToGroups(chunkRows);
@@ -811,9 +889,49 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   };
 
   const submitSermonFeedback = async (group: SermonGroup, isHelpful: boolean) => {
+    const nextFeedbackKind = isHelpful ? 'helpful' : 'not_relevant';
+    const answerPreview = `${group.title}\n${group.relevantText || group.summary || ''}`.trim();
+    const feedbackGroupKey = buildFeedbackKey(
+      'verse_match',
+      verseRef,
+      group.sermonId,
+      hashFeedbackValue(answerPreview),
+      'relevance'
+    );
+    const feedbackKey = buildFeedbackKey(feedbackGroupKey, nextFeedbackKind);
+
+    if (sermonFeedbackById[group.sermonId] === nextFeedbackKind) {
+      setSermonFeedbackById((prev) => {
+        const next = { ...prev };
+        delete next[group.sermonId];
+        return next;
+      });
+
+      try {
+        await fetch('/api/ai-feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            surface: 'verse_match',
+            question: verseRef,
+            answer: answerPreview,
+            feedbackKind: isHelpful ? 'match_helpful' : 'match_not_relevant',
+            targetRef: group.matchedReference || verseRef,
+            targetId: group.sermonId,
+            feedbackKey,
+            feedbackGroupKey,
+            action: 'unset',
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to remove sermon match feedback:', error);
+      }
+      return;
+    }
+
     setSermonFeedbackById((prev) => ({
       ...prev,
-      [group.sermonId]: isHelpful ? 'helpful' : 'not_relevant',
+      [group.sermonId]: nextFeedbackKind,
     }));
 
     try {
@@ -823,10 +941,13 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         body: JSON.stringify({
           surface: 'verse_match',
           question: verseRef,
-          answer: `${group.title}\n${group.relevantText || group.summary || ''}`.trim(),
+          answer: answerPreview,
           feedbackKind: isHelpful ? 'match_helpful' : 'match_not_relevant',
           targetRef: group.matchedReference || verseRef,
           targetId: group.sermonId,
+          feedbackKey,
+          feedbackGroupKey,
+          action: 'set',
         }),
       });
     } catch (error) {
@@ -1091,6 +1212,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   function renderSermonCard(group: SermonGroup) {
     const isOpen = expandedSermonIds.has(group.sermonId);
     const sermonDate = formatSermonDate(group.youtubePublishedAt);
+    const watchTimestamp = formatVideoTimestamp(group.startSeconds);
 
     return (
       <div
@@ -1140,7 +1262,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                 rel="noopener noreferrer"
                 className="inline-block text-xs text-[#c49a5c] hover:underline"
               >
-                ▶ Watch on YouTube
+                {watchTimestamp ? `▶ Watch on YouTube at ${watchTimestamp}` : '▶ Watch on YouTube'}
               </a>
             )}
 

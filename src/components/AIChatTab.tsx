@@ -3,6 +3,7 @@ import { Send, Loader2, X, Copy, Check, ThumbsUp, ThumbsDown, AlertCircle } from
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { VersePanel } from './VersePanel';
+import { buildFeedbackKey, hashFeedbackValue } from '../utils/feedback';
 
 type AIChatTabProps = {
   onClose: () => void;
@@ -145,6 +146,9 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     question: string;
     answer: string;
     feedbackKind: string;
+    feedbackKey: string;
+    feedbackGroupKey?: string;
+    action?: 'set' | 'unset';
   }) => {
     try {
       await fetch('/api/ai-feedback', {
@@ -155,11 +159,22 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
           question: payload.question,
           answer: payload.answer,
           feedbackKind: payload.feedbackKind,
+          feedbackKey: payload.feedbackKey,
+          feedbackGroupKey: payload.feedbackGroupKey,
+          action: payload.action || 'set',
         }),
       });
     } catch (error) {
       console.error('Failed to save AI feedback:', error);
     }
+  };
+
+  const getMessageFeedbackBase = (index: number) => {
+    const message = messages[index];
+    const question = getQuestionForMessage(index);
+    const answerHash = hashFeedbackValue(message?.content || '');
+    const questionHash = hashFeedbackValue(question);
+    return buildFeedbackKey('ai_chat', index, questionHash, answerHash);
   };
 
   const getQuestionForMessage = (index: number) =>
@@ -169,32 +184,103 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       .find((item) => item.role === 'user')?.content || '';
 
   const handleHelpfulnessFeedback = async (message: Message, index: number, isHelpful: boolean) => {
+    const nextFeedbackKind = isHelpful ? 'helpful' : 'not_helpful';
+    const feedbackBase = getMessageFeedbackBase(index);
+    const feedbackGroupKey = buildFeedbackKey(feedbackBase, 'helpfulness');
+    const feedbackKey = buildFeedbackKey(feedbackGroupKey, nextFeedbackKind);
+
+    if (helpfulnessFeedbackByMessageIndex[index] === nextFeedbackKind) {
+      setHelpfulnessFeedbackByMessageIndex((prev) => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+
+      await sendFeedback({
+        question: getQuestionForMessage(index),
+        answer: message.content,
+        feedbackKind: nextFeedbackKind,
+        feedbackKey,
+        feedbackGroupKey,
+        action: 'unset',
+      });
+      return;
+    }
+
     setHelpfulnessFeedbackByMessageIndex((prev) => ({
       ...prev,
-      [index]: isHelpful ? 'helpful' : 'not_helpful',
+      [index]: nextFeedbackKind,
     }));
 
     await sendFeedback({
       question: getQuestionForMessage(index),
       answer: message.content,
-      feedbackKind: isHelpful ? 'helpful' : 'not_helpful',
+      feedbackKind: nextFeedbackKind,
+      feedbackKey,
+      feedbackGroupKey,
     });
   };
 
   const handleAccuracyFeedback = async (message: Message, index: number, isAccurate: boolean) => {
+    const nextFeedbackKind = isAccurate ? 'accurate' : 'inaccurate';
+    const feedbackBase = getMessageFeedbackBase(index);
+    const feedbackGroupKey = buildFeedbackKey(feedbackBase, 'accuracy');
+    const feedbackKey = buildFeedbackKey(feedbackGroupKey, nextFeedbackKind);
+
+    if (accuracyFeedbackByMessageIndex[index] === nextFeedbackKind) {
+      setAccuracyFeedbackByMessageIndex((prev) => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+
+      await sendFeedback({
+        question: getQuestionForMessage(index),
+        answer: message.content,
+        feedbackKind: nextFeedbackKind,
+        feedbackKey,
+        feedbackGroupKey,
+        action: 'unset',
+      });
+      return;
+    }
+
     setAccuracyFeedbackByMessageIndex((prev) => ({
       ...prev,
-      [index]: isAccurate ? 'accurate' : 'inaccurate',
+      [index]: nextFeedbackKind,
     }));
 
     await sendFeedback({
       question: getQuestionForMessage(index),
       answer: message.content,
-      feedbackKind: isAccurate ? 'accurate' : 'inaccurate',
+      feedbackKind: nextFeedbackKind,
+      feedbackKey,
+      feedbackGroupKey,
     });
   };
 
   const handleLooksWrongFeedback = async (message: Message, index: number) => {
+    const feedbackBase = getMessageFeedbackBase(index);
+    const feedbackGroupKey = buildFeedbackKey(feedbackBase, 'looks_wrong');
+    const feedbackKey = buildFeedbackKey(feedbackGroupKey, 'looks_wrong');
+
+    if (flaggedMessageIndexes[index]) {
+      setFlaggedMessageIndexes((prev) => ({
+        ...prev,
+        [index]: false,
+      }));
+
+      await sendFeedback({
+        question: getQuestionForMessage(index),
+        answer: message.content,
+        feedbackKind: 'looks_wrong',
+        feedbackKey,
+        feedbackGroupKey,
+        action: 'unset',
+      });
+      return;
+    }
+
     setFlaggedMessageIndexes((prev) => ({
       ...prev,
       [index]: true,
@@ -204,6 +290,8 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       question: getQuestionForMessage(index),
       answer: message.content,
       feedbackKind: 'looks_wrong',
+      feedbackKey,
+      feedbackGroupKey,
     });
   };
 

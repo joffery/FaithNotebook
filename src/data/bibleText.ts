@@ -95,6 +95,11 @@ const BOOK_API_CODES: Record<string, string> = {
 
 const getChapterKey = (book: string, chapter: number) => `${normalizeBibleBookName(book)}-${chapter}`;
 
+const normalizeBibleChapter = (chapterData: BibleChapter): BibleChapter => ({
+  ...chapterData,
+  book: normalizeBibleBookName(chapterData.book),
+});
+
 const readStoredChapter = (key: string): BibleChapter | null => {
   if (typeof window === 'undefined') return null;
 
@@ -103,19 +108,20 @@ const readStoredChapter = (key: string): BibleChapter | null => {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.book || !parsed?.chapter || !Array.isArray(parsed?.verses)) return null;
-    return parsed as BibleChapter;
+    return normalizeBibleChapter(parsed as BibleChapter);
   } catch {
     return null;
   }
 };
 
 const storeChapter = (key: string, chapterData: BibleChapter) => {
-  runtimeBibleCache[key] = chapterData;
+  const normalizedChapter = normalizeBibleChapter(chapterData);
+  runtimeBibleCache[key] = normalizedChapter;
 
   if (typeof window === 'undefined') return;
 
   try {
-    window.localStorage.setItem(`${CACHE_STORAGE_PREFIX}:${key}`, JSON.stringify(chapterData));
+    window.localStorage.setItem(`${CACHE_STORAGE_PREFIX}:${key}`, JSON.stringify(normalizedChapter));
   } catch {
     // Ignore storage failures and keep the in-memory cache.
   }
@@ -446,11 +452,11 @@ export function getAvailableBibleChapters(): BibleChapter[] {
   const chapterMap = new Map<string, BibleChapter>();
 
   Object.entries(bibleChapters).forEach(([key, value]) => {
-    chapterMap.set(key, value);
+    chapterMap.set(key, normalizeBibleChapter(value));
   });
 
   Object.entries(runtimeBibleCache).forEach(([key, value]) => {
-    chapterMap.set(key, value);
+    chapterMap.set(key, normalizeBibleChapter(value));
   });
 
   if (typeof window !== 'undefined') {
@@ -466,7 +472,7 @@ export function getAvailableBibleChapters(): BibleChapter[] {
         if (!parsed?.book || !parsed?.chapter || !Array.isArray(parsed?.verses)) continue;
 
         const key = getChapterKey(parsed.book, parsed.chapter);
-        chapterMap.set(key, parsed as BibleChapter);
+        chapterMap.set(key, normalizeBibleChapter(parsed as BibleChapter));
       }
     } catch {
       // Ignore malformed cache entries and continue with what we have.
