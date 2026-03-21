@@ -8,6 +8,7 @@ import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '
 import { buildTimestampedYouTubeUrl, formatVideoTimestamp } from '../utils/youtube';
 import { buildFeedbackKey, hashFeedbackValue } from '../utils/feedback';
 import { flushPendingFeedbackQueue, submitFeedbackWithRetry } from '../utils/feedbackQueue';
+import { FeedbackModal, type FeedbackReasonOption } from './FeedbackModal';
 import { ProfileAvatar } from './ProfileAvatar';
 
 type VersePanelProps = {
@@ -51,6 +52,22 @@ type SermonChunkTimingRow = {
   verse_references: string[] | null;
   start_seconds: number | null;
 };
+
+type SermonFeedbackVote = 'up' | 'down';
+
+type SermonThumbDownDraft = {
+  sermonId: string;
+  reason: string;
+  details: string;
+  isSubmitting: boolean;
+};
+
+const SERMON_THUMB_DOWN_REASONS: FeedbackReasonOption[] = [
+  { value: 'wrong_sermon_match', label: 'Wrong sermon match' },
+  { value: 'missing_context', label: 'Missing context' },
+  { value: 'too_broad_or_vague', label: 'Too broad or vague' },
+  { value: 'other', label: 'Other' },
+];
 
 function trimToSentences(text: string, max: number): string {
   if (!text) return '';
@@ -172,10 +189,12 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [likePendingIds, setLikePendingIds] = useState<Set<string>>(new Set());
   const [currentDisplayName, setCurrentDisplayName] = useState<string>('You');
   const [expandedSermonIds, setExpandedSermonIds] = useState<Set<string>>(new Set());
-  const [sermonFeedbackById, setSermonFeedbackById] = useState<Record<string, 'helpful' | 'not_relevant'>>({});
+  const [sermonFeedbackById, setSermonFeedbackById] = useState<Record<string, SermonFeedbackVote>>({});
+  const [sermonThumbDownFeedbackById, setSermonThumbDownFeedbackById] = useState<Record<string, { reason: string; details: string }>>({});
+  const [sermonThumbDownDraft, setSermonThumbDownDraft] = useState<SermonThumbDownDraft | null>(null);
   const [verseText, setVerseText] = useState('');
   const [copiedVerse, setCopiedVerse] = useState(false);
-  const [feedbackStatusMessage, setFeedbackStatusMessage] = useState<string | null>(null);
+  const [feedbackStatusBySermonId, setFeedbackStatusBySermonId] = useState<Record<string, string>>({});
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const verseRef = `${book} ${chapter}:${verse}`;
@@ -198,16 +217,6 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   useEffect(() => {
     setSaveError(null);
   }, [activeTab]);
-
-  useEffect(() => {
-    if (!feedbackStatusMessage) return;
-
-    const timeoutId = window.setTimeout(() => {
-      setFeedbackStatusMessage(null);
-    }, 2400);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [feedbackStatusMessage]);
 
   useEffect(() => {
     setExpandedSermonIds(
@@ -904,19 +913,48 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     }
   };
 
-  const submitSermonFeedback = async (group: SermonGroup, isHelpful: boolean) => {
-    const nextFeedbackKind = isHelpful ? 'helpful' : 'not_relevant';
+  const setFeedbackStatus = (sermonId: string, message: string) => {
+    setFeedbackStatusBySermonId((prev) => ({
+      ...prev,
+      [sermonId]: message,
+    }));
+
+    window.setTimeout(() => {
+      setFeedbackStatusBySermonId((prev) => {
+        if (prev[sermonId] !== message) return prev;
+        const next = { ...prev };
+        delete next[sermonId];
+        return next;
+      });
+    }, 2400);
+  };
+
+  const clearFeedbackStatus = (sermonId: string) => {
+    setFeedbackStatusBySermonId((prev) => {
+      if (!prev[sermonId]) return prev;
+      const next = { ...prev };
+      delete next[sermonId];
+      return next;
+    });
+  };
+
+  const getSermonSentimentFeedbackKeys = (group: SermonGroup, feedbackKind: 'match_helpful' | 'match_not_relevant') => {
     const answerPreview = `${group.title}\n${group.relevantText || group.summary || ''}`.trim();
     const feedbackGroupKey = buildFeedbackKey(
       'verse_match',
       verseRef,
       group.sermonId,
       hashFeedbackValue(answerPreview),
-      'relevance'
+      'sentiment'
     );
-    const feedbackKey = buildFeedbackKey(feedbackGroupKey, nextFeedbackKind);
+    const feedbackKey = buildFeedbackKey(feedbackGroupKey, feedbackKind);
+    return { answerPreview, feedbackGroupKey, feedbackKey };
+  };
 
-    if (sermonFeedbackById[group.sermonId] === nextFeedbackKind) {
+  const submitSermonThumbUp = async (group: SermonGroup) => {
+    const { answerPreview, feedbackGroupKey, feedbackKey } = getSermonSentimentFeedbackKeys(group, 'match_helpful');
+
+    if (sermonFeedbackById[group.sermonId] === 'up') {
       setSermonFeedbackById((prev) => {
         const next = { ...prev };
         delete next[group.sermonId];
@@ -927,34 +965,138 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         surface: 'verse_match',
         question: verseRef,
         answer: answerPreview,
-        feedbackKind: isHelpful ? 'match_helpful' : 'match_not_relevant',
+        feedbackKind: 'match_helpful',
         targetRef: group.matchedReference || verseRef,
         targetId: group.sermonId,
         feedbackKey,
         feedbackGroupKey,
         action: 'unset',
       });
-      setFeedbackStatusMessage(result.queued ? 'Feedback removal saved locally and will retry automatically.' : 'Feedback removed.');
+
+      if (result.queued) {
+        setFeedbackStatus(group.sermonId, 'Feedback removal saved locally and will retry automatically.');
+      } else {
+        clearFeedbackStatus(group.sermonId);
+      }
       return;
     }
 
     setSermonFeedbackById((prev) => ({
       ...prev,
-      [group.sermonId]: nextFeedbackKind,
+      [group.sermonId]: 'up',
     }));
+    setSermonThumbDownDraft((current) => (current?.sermonId === group.sermonId ? null : current));
 
     const result = await submitFeedbackWithRetry({
       surface: 'verse_match',
       question: verseRef,
       answer: answerPreview,
-      feedbackKind: isHelpful ? 'match_helpful' : 'match_not_relevant',
+      feedbackKind: 'match_helpful',
       targetRef: group.matchedReference || verseRef,
       targetId: group.sermonId,
       feedbackKey,
       feedbackGroupKey,
       action: 'set',
     });
-    setFeedbackStatusMessage(result.queued ? 'Feedback saved locally and will retry automatically.' : 'Feedback saved.');
+
+    if (result.queued) {
+      setFeedbackStatus(group.sermonId, 'Feedback saved locally and will retry automatically.');
+    } else {
+      clearFeedbackStatus(group.sermonId);
+    }
+  };
+
+  const openSermonThumbDown = (group: SermonGroup) => {
+    if (sermonFeedbackById[group.sermonId] === 'down') {
+      void removeSermonThumbDown(group);
+      return;
+    }
+
+    const existingFeedback = sermonThumbDownFeedbackById[group.sermonId];
+    setSermonThumbDownDraft({
+      sermonId: group.sermonId,
+      reason: existingFeedback?.reason || '',
+      details: existingFeedback?.details || '',
+      isSubmitting: false,
+    });
+  };
+
+  const removeSermonThumbDown = async (group: SermonGroup) => {
+    const { answerPreview, feedbackGroupKey, feedbackKey } = getSermonSentimentFeedbackKeys(group, 'match_not_relevant');
+
+    setSermonFeedbackById((prev) => {
+      const next = { ...prev };
+      delete next[group.sermonId];
+      return next;
+    });
+
+    const result = await submitFeedbackWithRetry({
+      surface: 'verse_match',
+      question: verseRef,
+      answer: answerPreview,
+      feedbackKind: 'match_not_relevant',
+      targetRef: group.matchedReference || verseRef,
+      targetId: group.sermonId,
+      feedbackKey,
+      feedbackGroupKey,
+      action: 'unset',
+    });
+
+    if (result.queued) {
+      setFeedbackStatus(group.sermonId, 'Feedback removal saved locally and will retry automatically.');
+    } else {
+      clearFeedbackStatus(group.sermonId);
+    }
+  };
+
+  const submitSermonThumbDown = async () => {
+    if (!sermonThumbDownDraft) return;
+
+    const group = sermonGroups.find((item) => item.sermonId === sermonThumbDownDraft.sermonId);
+    if (!group) {
+      setSermonThumbDownDraft(null);
+      return;
+    }
+
+    const nextDraft = { ...sermonThumbDownDraft, isSubmitting: true };
+    setSermonThumbDownDraft(nextDraft);
+
+    const { answerPreview, feedbackGroupKey, feedbackKey } = getSermonSentimentFeedbackKeys(group, 'match_not_relevant');
+    const trimmedDetails = nextDraft.details.trim();
+
+    setSermonFeedbackById((prev) => ({
+      ...prev,
+      [group.sermonId]: 'down',
+    }));
+    setSermonThumbDownFeedbackById((prev) => ({
+      ...prev,
+      [group.sermonId]: {
+        reason: nextDraft.reason,
+        details: trimmedDetails,
+      },
+    }));
+
+    const result = await submitFeedbackWithRetry({
+      surface: 'verse_match',
+      question: verseRef,
+      answer: answerPreview,
+      feedbackKind: 'match_not_relevant',
+      feedbackReason: nextDraft.reason,
+      feedbackDetails: trimmedDetails,
+      targetRef: group.matchedReference || verseRef,
+      targetId: group.sermonId,
+      feedbackKey,
+      feedbackGroupKey,
+      action: 'set',
+    });
+
+    setSermonThumbDownDraft(null);
+
+    if (result.queued) {
+      setFeedbackStatus(group.sermonId, 'Feedback saved locally and will retry automatically.');
+    } else {
+      clearFeedbackStatus(group.sermonId);
+    }
   };
 
   const toggleSermonExpanded = (sermonId: string, trigger?: HTMLButtonElement | null) => {
@@ -1208,6 +1350,25 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
           )}
         </div>
       </div>
+
+      <FeedbackModal
+        isOpen={!!sermonThumbDownDraft}
+        reasons={SERMON_THUMB_DOWN_REASONS}
+        selectedReason={sermonThumbDownDraft?.reason || ''}
+        details={sermonThumbDownDraft?.details || ''}
+        description="Your feedback will help improve this app."
+        onClose={() => setSermonThumbDownDraft(null)}
+        onReasonChange={(reason) => {
+          setSermonThumbDownDraft((current) => (current ? { ...current, reason } : current));
+        }}
+        onDetailsChange={(details) => {
+          setSermonThumbDownDraft((current) => (current ? { ...current, details } : current));
+        }}
+        onSubmit={() => {
+          void submitSermonThumbDown();
+        }}
+        isSubmitting={sermonThumbDownDraft?.isSubmitting}
+      />
     </div>
   );
 
@@ -1216,6 +1377,12 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     const sermonDate = formatSermonDate(group.youtubePublishedAt);
     const watchTimestamp = formatVideoTimestamp(group.startSeconds);
     const activeFeedback = sermonFeedbackById[group.sermonId];
+    const feedbackButtonClassName = (isActive: boolean) =>
+      `inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${
+        isActive
+          ? 'border-[#2c1810] bg-[#2c1810] text-white shadow-sm'
+          : 'border-[#c49a5c]/30 bg-white/70 text-[#2c1810]/70 hover:bg-[#c49a5c]/12 hover:text-[#2c1810]'
+      }`;
 
     return (
       <div
@@ -1271,36 +1438,29 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
             <div className="pt-1">
               <p className="text-[11px] uppercase tracking-[0.18em] text-[#2c1810]/42 mb-2">
-                Was this sermon match useful?
+                Rate this sermon match
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => submitSermonFeedback(group, true)}
-                  className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                    activeFeedback === 'helpful'
-                      ? 'border-[#2c1810] bg-[#2c1810] text-white shadow-sm'
-                      : 'border-[#c49a5c]/30 bg-white/70 text-[#2c1810]/70 hover:bg-[#c49a5c]/12 hover:text-[#2c1810]'
-                  }`}
-                  aria-pressed={activeFeedback === 'helpful'}
+                  onClick={() => submitSermonThumbUp(group)}
+                  className={feedbackButtonClassName(activeFeedback === 'up')}
+                  aria-label="Thumbs up"
+                  aria-pressed={activeFeedback === 'up'}
                 >
                   <ThumbsUp size={14} />
-                  <span>Helpful</span>
                 </button>
                 <button
-                  onClick={() => submitSermonFeedback(group, false)}
-                  className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                    activeFeedback === 'not_relevant'
-                      ? 'border-[#2c1810] bg-[#2c1810] text-white shadow-sm'
-                      : 'border-[#c49a5c]/30 bg-white/70 text-[#2c1810]/70 hover:bg-[#c49a5c]/12 hover:text-[#2c1810]'
-                  }`}
-                  aria-pressed={activeFeedback === 'not_relevant'}
+                  onClick={() => openSermonThumbDown(group)}
+                  className={feedbackButtonClassName(activeFeedback === 'down')}
+                  aria-label="Thumbs down"
+                  aria-pressed={activeFeedback === 'down'}
+                  title={activeFeedback === 'down' ? 'Tap again to remove feedback' : 'Thumbs down'}
                 >
                   <ThumbsDown size={14} />
-                  <span>Not relevant</span>
                 </button>
               </div>
-              {feedbackStatusMessage && (
-                <p className="mt-2 text-xs text-[#8c6430]">{feedbackStatusMessage}</p>
+              {feedbackStatusBySermonId[group.sermonId] && (
+                <p className="mt-2 text-xs text-[#8c6430]">{feedbackStatusBySermonId[group.sermonId]}</p>
               )}
             </div>
           </div>

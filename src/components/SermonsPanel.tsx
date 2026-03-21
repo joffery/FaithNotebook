@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { ensureBibleChapter } from '../data/bibleText';
@@ -91,6 +91,11 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [expandedInsightCardIds, setExpandedInsightCardIds] = useState<Set<string>>(new Set());
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const pendingInsightScrollRestoreRef = useRef<{
+    sermonId: string;
+    scrollTop: number;
+    cardOffsetTop: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!expandedId) return;
@@ -119,6 +124,22 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   useEffect(() => {
     setPage(1);
   }, [search, region]);
+
+  useLayoutEffect(() => {
+    const pendingRestore = pendingInsightScrollRestoreRef.current;
+    if (!pendingRestore) return;
+
+    const scrollContainer = scrollContainerRef.current;
+    const sermonCard = sermonCardRefs.current[pendingRestore.sermonId];
+    if (!scrollContainer || !sermonCard) {
+      pendingInsightScrollRestoreRef.current = null;
+      return;
+    }
+
+    const nextCardOffsetTop = sermonCard.offsetTop;
+    scrollContainer.scrollTop = pendingRestore.scrollTop + (nextCardOffsetTop - pendingRestore.cardOffsetTop);
+    pendingInsightScrollRestoreRef.current = null;
+  }, [expandedInsightCardIds]);
 
   const loadSermons = async () => {
     if (!isSupabaseConfigured) return;
@@ -202,8 +223,17 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const toggleAllInsights = (id: string, trigger?: HTMLButtonElement | null) => {
     const scrollContainer = scrollContainerRef.current;
     const sermonCard = sermonCardRefs.current[id];
-    const previousTop = sermonCard?.getBoundingClientRect().top ?? null;
     trigger?.blur();
+
+    if (scrollContainer && sermonCard) {
+      pendingInsightScrollRestoreRef.current = {
+        sermonId: id,
+        scrollTop: scrollContainer.scrollTop,
+        cardOffsetTop: sermonCard.offsetTop,
+      };
+    } else {
+      pendingInsightScrollRestoreRef.current = null;
+    }
 
     setExpandedInsightCardIds((prev) => {
       const next = new Set(prev);
@@ -214,14 +244,6 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
       }
       return next;
     });
-
-    if (scrollContainer && previousTop !== null) {
-      window.requestAnimationFrame(() => {
-        const nextTop = sermonCardRefs.current[id]?.getBoundingClientRect().top ?? null;
-        if (nextTop === null) return;
-        scrollContainer.scrollTop += nextTop - previousTop;
-      });
-    }
   };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));

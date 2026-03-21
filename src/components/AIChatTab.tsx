@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Loader2, X, Copy, Check, ThumbsUp, ThumbsDown, AlertCircle } from 'lucide-react';
+import { Send, Loader2, X, Copy, Check, ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { VersePanel } from './VersePanel';
+import { FeedbackModal, type FeedbackReasonOption } from './FeedbackModal';
 import { buildFeedbackKey, hashFeedbackValue } from '../utils/feedback';
 import { flushPendingFeedbackQueue, submitFeedbackWithRetry } from '../utils/feedbackQueue';
 
@@ -24,6 +25,23 @@ type Message = {
   content: string;
   sources?: Source[];
 };
+
+type FeedbackVote = 'up' | 'down';
+
+type ThumbDownFeedbackDraft = {
+  messageIndex: number;
+  reason: string;
+  details: string;
+  isSubmitting: boolean;
+};
+
+const AI_CHAT_THUMB_DOWN_REASONS: FeedbackReasonOption[] = [
+  { value: 'incorrect_or_incomplete', label: 'Incorrect or incomplete' },
+  { value: 'not_what_i_asked_for', label: 'Not what I asked for' },
+  { value: 'wrong_scripture_or_interpretation', label: 'Wrong scripture or interpretation' },
+  { value: 'unclear_or_confusing', label: 'Unclear or confusing' },
+  { value: 'other', label: 'Other' },
+];
 
 const SUGGESTED_QUESTIONS = [
   'What does the Bible say about baptism?',
@@ -57,9 +75,9 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
-  const [helpfulnessFeedbackByMessageIndex, setHelpfulnessFeedbackByMessageIndex] = useState<Record<number, 'helpful' | 'not_helpful'>>({});
-  const [accuracyFeedbackByMessageIndex, setAccuracyFeedbackByMessageIndex] = useState<Record<number, 'accurate' | 'inaccurate'>>({});
-  const [flaggedMessageIndexes, setFlaggedMessageIndexes] = useState<Record<number, boolean>>({});
+  const [feedbackByMessageIndex, setFeedbackByMessageIndex] = useState<Record<number, FeedbackVote>>({});
+  const [thumbDownFeedbackByMessageIndex, setThumbDownFeedbackByMessageIndex] = useState<Record<number, { reason: string; details: string }>>({});
+  const [thumbDownDraft, setThumbDownDraft] = useState<ThumbDownFeedbackDraft | null>(null);
   const [feedbackStatusByMessageIndex, setFeedbackStatusByMessageIndex] = useState<Record<number, string>>({});
   const [versePanelRef, setVersePanelRef] = useState<{ book: string; chapter: number; verse: number } | null>(null);
   const [expandedSummaryIndex, setExpandedSummaryIndex] = useState<string | null>(null);
@@ -170,6 +188,8 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     feedbackKind: string;
     feedbackKey: string;
     feedbackGroupKey?: string;
+    feedbackReason?: string;
+    feedbackDetails?: string;
     action?: 'set' | 'unset';
   }) => {
     return await submitFeedbackWithRetry({
@@ -179,6 +199,8 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       feedbackKind: payload.feedbackKind,
       feedbackKey: payload.feedbackKey,
       feedbackGroupKey: payload.feedbackGroupKey,
+      feedbackReason: payload.feedbackReason,
+      feedbackDetails: payload.feedbackDetails,
       action: payload.action || 'set',
     });
   };
@@ -197,14 +219,27 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       .reverse()
       .find((item) => item.role === 'user')?.content || '';
 
-  const handleHelpfulnessFeedback = async (message: Message, index: number, isHelpful: boolean) => {
-    const nextFeedbackKind = isHelpful ? 'helpful' : 'not_helpful';
-    const feedbackBase = getMessageFeedbackBase(index);
-    const feedbackGroupKey = buildFeedbackKey(feedbackBase, 'helpfulness');
-    const feedbackKey = buildFeedbackKey(feedbackGroupKey, nextFeedbackKind);
+  const clearFeedbackStatus = (index: number) => {
+    setFeedbackStatusByMessageIndex((prev) => {
+      if (!prev[index]) return prev;
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+  };
 
-    if (helpfulnessFeedbackByMessageIndex[index] === nextFeedbackKind) {
-      setHelpfulnessFeedbackByMessageIndex((prev) => {
+  const getSentimentFeedbackKeys = (index: number, feedbackKind: 'helpful' | 'not_helpful') => {
+    const feedbackBase = getMessageFeedbackBase(index);
+    const feedbackGroupKey = buildFeedbackKey(feedbackBase, 'sentiment');
+    const feedbackKey = buildFeedbackKey(feedbackGroupKey, feedbackKind);
+    return { feedbackGroupKey, feedbackKey };
+  };
+
+  const handleThumbUpFeedback = async (message: Message, index: number) => {
+    const { feedbackGroupKey, feedbackKey } = getSentimentFeedbackKeys(index, 'helpful');
+
+    if (feedbackByMessageIndex[index] === 'up') {
+      setFeedbackByMessageIndex((prev) => {
         const next = { ...prev };
         delete next[index];
         return next;
@@ -213,106 +248,128 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       const result = await sendFeedback({
         question: getQuestionForMessage(index),
         answer: message.content,
-        feedbackKind: nextFeedbackKind,
+        feedbackKind: 'helpful',
         feedbackKey,
         feedbackGroupKey,
         action: 'unset',
       });
-      setFeedbackStatus(index, result.queued ? 'Feedback removal saved locally and will retry automatically.' : 'Feedback removed.');
+
+      if (result.queued) {
+        setFeedbackStatus(index, 'Feedback removal saved locally and will retry automatically.');
+      } else {
+        clearFeedbackStatus(index);
+      }
       return;
     }
 
-    setHelpfulnessFeedbackByMessageIndex((prev) => ({
+    setFeedbackByMessageIndex((prev) => ({
       ...prev,
-      [index]: nextFeedbackKind,
+      [index]: 'up',
     }));
+    setThumbDownDraft((current) => (current?.messageIndex === index ? null : current));
 
     const result = await sendFeedback({
       question: getQuestionForMessage(index),
       answer: message.content,
-      feedbackKind: nextFeedbackKind,
+      feedbackKind: 'helpful',
       feedbackKey,
       feedbackGroupKey,
     });
-    setFeedbackStatus(index, result.queued ? 'Feedback saved locally and will retry automatically.' : 'Feedback saved. Tap again to undo.');
+
+    if (result.queued) {
+      setFeedbackStatus(index, 'Feedback saved locally and will retry automatically.');
+    } else {
+      clearFeedbackStatus(index);
+    }
   };
 
-  const handleAccuracyFeedback = async (message: Message, index: number, isAccurate: boolean) => {
-    const nextFeedbackKind = isAccurate ? 'accurate' : 'inaccurate';
-    const feedbackBase = getMessageFeedbackBase(index);
-    const feedbackGroupKey = buildFeedbackKey(feedbackBase, 'accuracy');
-    const feedbackKey = buildFeedbackKey(feedbackGroupKey, nextFeedbackKind);
-
-    if (accuracyFeedbackByMessageIndex[index] === nextFeedbackKind) {
-      setAccuracyFeedbackByMessageIndex((prev) => {
-        const next = { ...prev };
-        delete next[index];
-        return next;
-      });
-
-      const result = await sendFeedback({
-        question: getQuestionForMessage(index),
-        answer: message.content,
-        feedbackKind: nextFeedbackKind,
-        feedbackKey,
-        feedbackGroupKey,
-        action: 'unset',
-      });
-      setFeedbackStatus(index, result.queued ? 'Feedback removal saved locally and will retry automatically.' : 'Feedback removed.');
+  const openThumbDownFeedback = (index: number) => {
+    if (feedbackByMessageIndex[index] === 'down') {
+      void removeThumbDownFeedback(index);
       return;
     }
 
-    setAccuracyFeedbackByMessageIndex((prev) => ({
-      ...prev,
-      [index]: nextFeedbackKind,
-    }));
-
-    const result = await sendFeedback({
-      question: getQuestionForMessage(index),
-      answer: message.content,
-      feedbackKind: nextFeedbackKind,
-      feedbackKey,
-      feedbackGroupKey,
+    const existingFeedback = thumbDownFeedbackByMessageIndex[index];
+    setThumbDownDraft({
+      messageIndex: index,
+      reason: existingFeedback?.reason || '',
+      details: existingFeedback?.details || '',
+      isSubmitting: false,
     });
-    setFeedbackStatus(index, result.queued ? 'Feedback saved locally and will retry automatically.' : 'Feedback saved. Tap again to undo.');
   };
 
-  const handleLooksWrongFeedback = async (message: Message, index: number) => {
-    const feedbackBase = getMessageFeedbackBase(index);
-    const feedbackGroupKey = buildFeedbackKey(feedbackBase, 'looks_wrong');
-    const feedbackKey = buildFeedbackKey(feedbackGroupKey, 'looks_wrong');
+  const removeThumbDownFeedback = async (index: number) => {
+    const message = messages[index];
+    if (!message) return;
 
-    if (flaggedMessageIndexes[index]) {
-      setFlaggedMessageIndexes((prev) => ({
-        ...prev,
-        [index]: false,
-      }));
+    const { feedbackGroupKey, feedbackKey } = getSentimentFeedbackKeys(index, 'not_helpful');
 
-      const result = await sendFeedback({
-        question: getQuestionForMessage(index),
-        answer: message.content,
-        feedbackKind: 'looks_wrong',
-        feedbackKey,
-        feedbackGroupKey,
-        action: 'unset',
-      });
-      setFeedbackStatus(index, result.queued ? 'Feedback removal saved locally and will retry automatically.' : 'Feedback removed.');
-      return;
-    }
-
-    setFlaggedMessageIndexes((prev) => ({
-      ...prev,
-      [index]: true,
-    }));
+    setFeedbackByMessageIndex((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
 
     const result = await sendFeedback({
       question: getQuestionForMessage(index),
       answer: message.content,
-      feedbackKind: 'looks_wrong',
+      feedbackKind: 'not_helpful',
       feedbackKey,
       feedbackGroupKey,
+      action: 'unset',
     });
-    setFeedbackStatus(index, result.queued ? 'Feedback saved locally and will retry automatically.' : 'Feedback saved. Tap again to undo.');
+
+    if (result.queued) {
+      setFeedbackStatus(index, 'Feedback removal saved locally and will retry automatically.');
+    } else {
+      clearFeedbackStatus(index);
+    }
+  };
+
+  const submitThumbDownFeedback = async () => {
+    if (!thumbDownDraft) return;
+
+    const message = messages[thumbDownDraft.messageIndex];
+    if (!message) {
+      setThumbDownDraft(null);
+      return;
+    }
+
+    const nextDraft = { ...thumbDownDraft, isSubmitting: true };
+    setThumbDownDraft(nextDraft);
+
+    const { feedbackGroupKey, feedbackKey } = getSentimentFeedbackKeys(thumbDownDraft.messageIndex, 'not_helpful');
+    const trimmedDetails = nextDraft.details.trim();
+
+    setFeedbackByMessageIndex((prev) => ({
+      ...prev,
+      [thumbDownDraft.messageIndex]: 'down',
+    }));
+    setThumbDownFeedbackByMessageIndex((prev) => ({
+      ...prev,
+      [thumbDownDraft.messageIndex]: {
+        reason: nextDraft.reason,
+        details: trimmedDetails,
+      },
+    }));
+
+    const result = await sendFeedback({
+      question: getQuestionForMessage(thumbDownDraft.messageIndex),
+      answer: message.content,
+      feedbackKind: 'not_helpful',
+      feedbackKey,
+      feedbackGroupKey,
+      feedbackReason: nextDraft.reason,
+      feedbackDetails: trimmedDetails,
+    });
+
+    setThumbDownDraft(null);
+
+    if (result.queued) {
+      setFeedbackStatus(thumbDownDraft.messageIndex, 'Feedback saved locally and will retry automatically.');
+    } else {
+      clearFeedbackStatus(thumbDownDraft.messageIndex);
+    }
   };
 
   const handleCopy = async (content: string, index: number) => {
@@ -328,7 +385,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   };
 
   const feedbackButtonClassName = (isActive: boolean) =>
-    `inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+    `inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
       isActive
         ? 'border-[#2c1810] bg-[#2c1810] text-white shadow-sm'
         : 'border-[#c49a5c]/30 bg-white/70 text-[#2c1810]/70 hover:bg-[#c49a5c]/12 hover:text-[#2c1810]'
@@ -395,49 +452,20 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
                             <span>{copiedMessageIndex === idx ? 'Copied' : 'Copy'}</span>
                           </button>
                           <button
-                            onClick={() => handleHelpfulnessFeedback(message, idx, true)}
-                            className={feedbackButtonClassName(helpfulnessFeedbackByMessageIndex[idx] === 'helpful')}
-                            aria-label="Helpful answer"
-                            aria-pressed={helpfulnessFeedbackByMessageIndex[idx] === 'helpful'}
+                            onClick={() => handleThumbUpFeedback(message, idx)}
+                            className={feedbackButtonClassName(feedbackByMessageIndex[idx] === 'up')}
+                            aria-label="Thumbs up"
+                            aria-pressed={feedbackByMessageIndex[idx] === 'up'}
                           >
                             <ThumbsUp size={14} />
-                            <span>Helpful</span>
                           </button>
                           <button
-                            onClick={() => handleHelpfulnessFeedback(message, idx, false)}
-                            className={feedbackButtonClassName(helpfulnessFeedbackByMessageIndex[idx] === 'not_helpful')}
-                            aria-label="Not helpful answer"
-                            aria-pressed={helpfulnessFeedbackByMessageIndex[idx] === 'not_helpful'}
+                            onClick={() => openThumbDownFeedback(idx)}
+                            className={feedbackButtonClassName(feedbackByMessageIndex[idx] === 'down')}
+                            aria-label="Thumbs down"
+                            aria-pressed={feedbackByMessageIndex[idx] === 'down'}
                           >
                             <ThumbsDown size={14} />
-                            <span>Not helpful</span>
-                          </button>
-                          <button
-                            onClick={() => handleAccuracyFeedback(message, idx, true)}
-                            className={feedbackButtonClassName(accuracyFeedbackByMessageIndex[idx] === 'accurate')}
-                            aria-label="Accurate answer"
-                            aria-pressed={accuracyFeedbackByMessageIndex[idx] === 'accurate'}
-                          >
-                            <Check size={14} />
-                            <span>Accurate</span>
-                          </button>
-                          <button
-                            onClick={() => handleAccuracyFeedback(message, idx, false)}
-                            className={feedbackButtonClassName(accuracyFeedbackByMessageIndex[idx] === 'inaccurate')}
-                            aria-label="Not accurate answer"
-                            aria-pressed={accuracyFeedbackByMessageIndex[idx] === 'inaccurate'}
-                          >
-                            <X size={14} />
-                            <span>Not accurate</span>
-                          </button>
-                          <button
-                            onClick={() => handleLooksWrongFeedback(message, idx)}
-                            className={feedbackButtonClassName(!!flaggedMessageIndexes[idx])}
-                            aria-label="Something looks wrong"
-                            aria-pressed={!!flaggedMessageIndexes[idx]}
-                          >
-                            <AlertCircle size={14} />
-                            <span>Looks wrong</span>
                           </button>
                         </div>
                       </div>
@@ -538,6 +566,25 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
           onClose={() => setVersePanelRef(null)}
         />
       )}
+
+      <FeedbackModal
+        isOpen={!!thumbDownDraft}
+        reasons={AI_CHAT_THUMB_DOWN_REASONS}
+        selectedReason={thumbDownDraft?.reason || ''}
+        details={thumbDownDraft?.details || ''}
+        description="Your feedback will help improve this app."
+        onClose={() => setThumbDownDraft(null)}
+        onReasonChange={(reason) => {
+          setThumbDownDraft((current) => (current ? { ...current, reason } : current));
+        }}
+        onDetailsChange={(details) => {
+          setThumbDownDraft((current) => (current ? { ...current, details } : current));
+        }}
+        onSubmit={() => {
+          void submitThumbDownFeedback();
+        }}
+        isSubmitting={thumbDownDraft?.isSubmitting}
+      />
     </div>
   );
 }

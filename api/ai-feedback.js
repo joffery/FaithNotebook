@@ -29,6 +29,26 @@ const getFeedbackConflictKinds = (feedbackKind) => {
       return ['match_helpful', 'match_not_relevant'];
     case 'looks_wrong':
       return ['looks_wrong'];
+    case 'report_wrong_scripture':
+    case 'report_wrong_sermon_match':
+    case 'report_misleading_advice':
+    case 'report_other':
+      return [
+        'report_wrong_scripture',
+        'report_wrong_sermon_match',
+        'report_misleading_advice',
+        'report_other',
+      ];
+    case 'verse_report_wrong_match':
+    case 'verse_report_off_topic':
+    case 'verse_report_missing_context':
+    case 'verse_report_other':
+      return [
+        'verse_report_wrong_match',
+        'verse_report_off_topic',
+        'verse_report_missing_context',
+        'verse_report_other',
+      ];
     default:
       return feedbackKind ? [feedbackKind] : [];
   }
@@ -41,6 +61,7 @@ const buildLegacyFeedbackMatchQuery = (query, {
   feedbackKind,
   targetRef,
   targetId,
+  includeFeedbackKind = true,
 }) => {
   let nextQuery = query
     .eq('answer_preview', answerPreview)
@@ -52,9 +73,9 @@ const buildLegacyFeedbackMatchQuery = (query, {
     nextQuery = nextQuery.is('question', null);
   }
 
-  if (feedbackKind) {
+  if (includeFeedbackKind && feedbackKind) {
     nextQuery = nextQuery.eq('feedback_kind', feedbackKind);
-  } else {
+  } else if (includeFeedbackKind) {
     nextQuery = nextQuery.is('feedback_kind', null);
   }
 
@@ -71,6 +92,36 @@ const buildLegacyFeedbackMatchQuery = (query, {
   }
 
   return nextQuery;
+};
+
+const deleteLegacyConflictingFeedback = async (supabase, {
+  question,
+  answerPreview,
+  surface,
+  feedbackKind,
+  targetRef,
+  targetId,
+}) => {
+  const conflictKinds = getFeedbackConflictKinds(feedbackKind);
+  if (conflictKinds.length === 0) {
+    return { error: null };
+  }
+
+  return await buildLegacyFeedbackMatchQuery(
+    supabase
+      .from('ai_feedback')
+      .delete()
+      .in('feedback_kind', conflictKinds),
+    {
+      question,
+      answerPreview,
+      surface,
+      feedbackKind,
+      targetRef,
+      targetId,
+      includeFeedbackKind: false,
+    }
+  );
 };
 
 export default async function handler(req, res) {
@@ -91,6 +142,8 @@ export default async function handler(req, res) {
   const targetId = String(req.body?.targetId || '').trim();
   const feedbackKey = String(req.body?.feedbackKey || '').trim();
   const feedbackGroupKey = String(req.body?.feedbackGroupKey || '').trim();
+  const feedbackReason = String(req.body?.feedbackReason || '').trim();
+  const feedbackDetails = String(req.body?.feedbackDetails || '').trim();
   const action = String(req.body?.action || 'set').trim() || 'set';
   const answerPreview = answer.slice(0, 2000);
   const wasHelpful =
@@ -109,19 +162,25 @@ export default async function handler(req, res) {
         .delete()
         .eq('feedback_key', feedbackKey);
 
-      if (error && String(error.message || '').toLowerCase().includes('feedback_key')) {
-        const fallback = await buildLegacyFeedbackMatchQuery(
-          supabase.from('ai_feedback').delete(),
-          {
-            question,
-            answerPreview,
-            surface,
-            feedbackKind,
-            targetRef,
-            targetId,
-          }
-        );
-        error = fallback.error;
+      const keyColumnMissing = error && String(error.message || '').toLowerCase().includes('feedback_key');
+      if (keyColumnMissing) {
+        error = null;
+      }
+
+      const legacyDelete = await buildLegacyFeedbackMatchQuery(
+        supabase.from('ai_feedback').delete(),
+        {
+          question,
+          answerPreview,
+          surface,
+          feedbackKind,
+          targetRef,
+          targetId,
+        }
+      );
+
+      if (!error) {
+        error = legacyDelete.error;
       }
 
       if (error) {
@@ -148,16 +207,22 @@ export default async function handler(req, res) {
         .eq('feedback_group_key', feedbackGroupKey)
         .neq('feedback_key', feedbackKey);
 
-      if (cleanupError && String(cleanupError.message || '').toLowerCase().includes('feedback_group_key')) {
-        const conflictKinds = getFeedbackConflictKinds(feedbackKind);
-        const fallbackCleanup = await supabase
-          .from('ai_feedback')
-          .delete()
-          .eq('answer_preview', answerPreview)
-          .eq('surface', surface)
-          .in('feedback_kind', conflictKinds);
+      const groupColumnMissing = cleanupError && String(cleanupError.message || '').toLowerCase().includes('feedback_group_key');
+      if (groupColumnMissing) {
+        cleanupError = null;
+      }
 
-        cleanupError = fallbackCleanup.error;
+      const legacyCleanup = await deleteLegacyConflictingFeedback(supabase, {
+        question,
+        answerPreview,
+        surface,
+        feedbackKind,
+        targetRef,
+        targetId,
+      });
+
+      if (!cleanupError) {
+        cleanupError = legacyCleanup.error;
       }
 
       if (cleanupError) {
@@ -172,6 +237,8 @@ export default async function handler(req, res) {
       was_helpful: wasHelpful,
       surface,
       feedback_kind: feedbackKind || null,
+      feedback_reason: feedbackReason || null,
+      feedback_details: feedbackDetails || null,
       target_ref: targetRef || null,
       target_id: targetId || null,
       feedback_key: feedbackKey,
@@ -185,18 +252,42 @@ export default async function handler(req, res) {
       (
         String(error.message || '').toLowerCase().includes('feedback_key') ||
         String(error.message || '').toLowerCase().includes('feedback_group_key') ||
+        String(error.message || '').toLowerCase().includes('feedback_reason') ||
+        String(error.message || '').toLowerCase().includes('feedback_details') ||
         String(error.message || '').toLowerCase().includes('there is no unique or exclusion constraint matching')
       )
     ) {
-      const fallback = await supabase.from('ai_feedback').insert({
+      const fallbackPayload = {
         question: question || null,
         answer_preview: answerPreview,
         was_helpful: wasHelpful,
         surface,
         feedback_kind: feedbackKind || null,
+        feedback_reason: feedbackReason || null,
+        feedback_details: feedbackDetails || null,
         target_ref: targetRef || null,
         target_id: targetId || null,
-      });
+      };
+
+      let fallback = await supabase.from('ai_feedback').insert(fallbackPayload);
+      if (
+        fallback.error &&
+        (
+          String(fallback.error.message || '').toLowerCase().includes('feedback_reason') ||
+          String(fallback.error.message || '').toLowerCase().includes('feedback_details')
+        )
+      ) {
+        fallback = await supabase.from('ai_feedback').insert({
+          question: question || null,
+          answer_preview: answerPreview,
+          was_helpful: wasHelpful,
+          surface,
+          feedback_kind: feedbackKind || null,
+          target_ref: targetRef || null,
+          target_id: targetId || null,
+        });
+      }
+
       error = fallback.error;
     }
 
