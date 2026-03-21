@@ -3,8 +3,16 @@ import { Send, Loader2, X, Copy, Check, ThumbsUp, ThumbsDown } from 'lucide-reac
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { VersePanel } from './VersePanel';
+import { useAuth } from '../context/AuthContext';
 import { FeedbackModal, type FeedbackReasonOption } from './FeedbackModal';
-import { buildFeedbackKey, hashFeedbackValue } from '../utils/feedback';
+import {
+  buildFeedbackKey,
+  clearPersistedFeedbackState,
+  getPersistedFeedbackState,
+  hashFeedbackValue,
+  savePersistedFeedbackState,
+} from '../utils/feedback';
+import { buildFeedbackActorKey, getAnonymousFeedbackSessionId } from '../utils/feedbackActor';
 import { flushPendingFeedbackQueue, submitFeedbackWithRetry } from '../utils/feedbackQueue';
 
 type AIChatTabProps = {
@@ -71,6 +79,7 @@ const loadMessagesFromSession = (): Message[] => {
 };
 
 export function AIChatTab({ onClose }: AIChatTabProps) {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>(() => loadMessagesFromSession());
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -84,6 +93,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const lastAssistantMsgRef = useRef<HTMLDivElement | null>(null);
   const prevMessageCount = useRef(0);
+  const anonymousSessionIdRef = useRef<string>(getAnonymousFeedbackSessionId());
 
   useEffect(() => {
     const count = messages.length;
@@ -115,6 +125,36 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   useEffect(() => {
     void flushPendingFeedbackQueue();
   }, []);
+
+  useEffect(() => {
+    const nextFeedbackByMessageIndex: Record<number, FeedbackVote> = {};
+    const nextThumbDownFeedbackByMessageIndex: Record<number, { reason: string; details: string }> = {};
+
+    messages.forEach((message, index) => {
+      if (message.role !== 'assistant') return;
+
+      const { feedbackGroupKey } = getSentimentFeedbackKeys(index, 'helpful');
+      const persistedFeedback = getPersistedFeedbackState(feedbackGroupKey);
+
+      if (!persistedFeedback) return;
+
+      if (persistedFeedback.feedbackKind === 'helpful') {
+        nextFeedbackByMessageIndex[index] = 'up';
+        return;
+      }
+
+      if (persistedFeedback.feedbackKind === 'not_helpful') {
+        nextFeedbackByMessageIndex[index] = 'down';
+        nextThumbDownFeedbackByMessageIndex[index] = {
+          reason: persistedFeedback.feedbackReason || '',
+          details: persistedFeedback.feedbackDetails || '',
+        };
+      }
+    });
+
+    setFeedbackByMessageIndex(nextFeedbackByMessageIndex);
+    setThumbDownFeedbackByMessageIndex(nextThumbDownFeedbackByMessageIndex);
+  }, [messages, user?.id]);
 
   const setFeedbackStatus = (index: number, message: string) => {
     setFeedbackStatusByMessageIndex((prev) => ({
@@ -201,6 +241,9 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       feedbackGroupKey: payload.feedbackGroupKey,
       feedbackReason: payload.feedbackReason,
       feedbackDetails: payload.feedbackDetails,
+      userId: user?.id,
+      anonymousSessionId: anonymousSessionIdRef.current,
+      feedbackActorKey: buildFeedbackActorKey(user?.id, anonymousSessionIdRef.current),
       action: payload.action || 'set',
     });
   };
@@ -210,7 +253,13 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     const question = getQuestionForMessage(index);
     const answerHash = hashFeedbackValue(message?.content || '');
     const questionHash = hashFeedbackValue(question);
-    return buildFeedbackKey('ai_chat', index, questionHash, answerHash);
+    return buildFeedbackKey(
+      'ai_chat',
+      buildFeedbackActorKey(user?.id, anonymousSessionIdRef.current),
+      index,
+      questionHash,
+      answerHash
+    );
   };
 
   const getQuestionForMessage = (index: number) =>
@@ -239,6 +288,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     const { feedbackGroupKey, feedbackKey } = getSentimentFeedbackKeys(index, 'helpful');
 
     if (feedbackByMessageIndex[index] === 'up') {
+      clearPersistedFeedbackState(feedbackGroupKey, feedbackKey);
       setFeedbackByMessageIndex((prev) => {
         const next = { ...prev };
         delete next[index];
@@ -267,6 +317,13 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       [index]: 'up',
     }));
     setThumbDownDraft((current) => (current?.messageIndex === index ? null : current));
+    savePersistedFeedbackState({
+      feedbackKey,
+      feedbackGroupKey,
+      feedbackKind: 'helpful',
+      surface: 'ai_chat',
+      updatedAt: Date.now(),
+    });
 
     const result = await sendFeedback({
       question: getQuestionForMessage(index),
@@ -304,6 +361,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
 
     const { feedbackGroupKey, feedbackKey } = getSentimentFeedbackKeys(index, 'not_helpful');
 
+    clearPersistedFeedbackState(feedbackGroupKey, feedbackKey);
     setFeedbackByMessageIndex((prev) => {
       const next = { ...prev };
       delete next[index];
@@ -352,6 +410,15 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
         details: trimmedDetails,
       },
     }));
+    savePersistedFeedbackState({
+      feedbackKey,
+      feedbackGroupKey,
+      feedbackKind: 'not_helpful',
+      feedbackReason: nextDraft.reason,
+      feedbackDetails: trimmedDetails,
+      surface: 'ai_chat',
+      updatedAt: Date.now(),
+    });
 
     const result = await sendFeedback({
       question: getQuestionForMessage(thumbDownDraft.messageIndex),

@@ -6,7 +6,14 @@ import { getBibleChapter, ensureBibleChapter } from '../data/bibleText';
 import { parseVerseReference } from '../utils/verseParser';
 import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
 import { buildTimestampedYouTubeUrl, formatVideoTimestamp } from '../utils/youtube';
-import { buildFeedbackKey, hashFeedbackValue } from '../utils/feedback';
+import {
+  buildFeedbackKey,
+  clearPersistedFeedbackState,
+  getPersistedFeedbackState,
+  hashFeedbackValue,
+  savePersistedFeedbackState,
+} from '../utils/feedback';
+import { buildFeedbackActorKey, getAnonymousFeedbackSessionId } from '../utils/feedbackActor';
 import { flushPendingFeedbackQueue, submitFeedbackWithRetry } from '../utils/feedbackQueue';
 import { FeedbackModal, type FeedbackReasonOption } from './FeedbackModal';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -196,6 +203,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [copiedVerse, setCopiedVerse] = useState(false);
   const [feedbackStatusBySermonId, setFeedbackStatusBySermonId] = useState<Record<string, string>>({});
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const anonymousSessionIdRef = useRef<string>(getAnonymousFeedbackSessionId());
 
   const verseRef = `${book} ${chapter}:${verse}`;
 
@@ -231,6 +239,34 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   useEffect(() => {
     void flushPendingFeedbackQueue();
   }, []);
+
+  useEffect(() => {
+    const nextFeedbackById: Record<string, SermonFeedbackVote> = {};
+    const nextThumbDownFeedbackById: Record<string, { reason: string; details: string }> = {};
+
+    sermonGroups.forEach((group) => {
+      const { feedbackGroupKey } = getSermonSentimentFeedbackKeys(group, 'match_helpful');
+      const persistedFeedback = getPersistedFeedbackState(feedbackGroupKey);
+
+      if (!persistedFeedback) return;
+
+      if (persistedFeedback.feedbackKind === 'match_helpful') {
+        nextFeedbackById[group.sermonId] = 'up';
+        return;
+      }
+
+      if (persistedFeedback.feedbackKind === 'match_not_relevant') {
+        nextFeedbackById[group.sermonId] = 'down';
+        nextThumbDownFeedbackById[group.sermonId] = {
+          reason: persistedFeedback.feedbackReason || '',
+          details: persistedFeedback.feedbackDetails || '',
+        };
+      }
+    });
+
+    setSermonFeedbackById(nextFeedbackById);
+    setSermonThumbDownFeedbackById(nextThumbDownFeedbackById);
+  }, [sermonGroups, verseRef, user?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -942,6 +978,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     const answerPreview = `${group.title}\n${group.relevantText || group.summary || ''}`.trim();
     const feedbackGroupKey = buildFeedbackKey(
       'verse_match',
+      buildFeedbackActorKey(user?.id, anonymousSessionIdRef.current),
       verseRef,
       group.sermonId,
       hashFeedbackValue(answerPreview),
@@ -955,6 +992,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     const { answerPreview, feedbackGroupKey, feedbackKey } = getSermonSentimentFeedbackKeys(group, 'match_helpful');
 
     if (sermonFeedbackById[group.sermonId] === 'up') {
+      clearPersistedFeedbackState(feedbackGroupKey, feedbackKey);
       setSermonFeedbackById((prev) => {
         const next = { ...prev };
         delete next[group.sermonId];
@@ -966,6 +1004,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         question: verseRef,
         answer: answerPreview,
         feedbackKind: 'match_helpful',
+        userId: user?.id,
+        anonymousSessionId: anonymousSessionIdRef.current,
+        feedbackActorKey: buildFeedbackActorKey(user?.id, anonymousSessionIdRef.current),
         targetRef: group.matchedReference || verseRef,
         targetId: group.sermonId,
         feedbackKey,
@@ -986,12 +1027,22 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       [group.sermonId]: 'up',
     }));
     setSermonThumbDownDraft((current) => (current?.sermonId === group.sermonId ? null : current));
+    savePersistedFeedbackState({
+      feedbackKey,
+      feedbackGroupKey,
+      feedbackKind: 'match_helpful',
+      surface: 'verse_match',
+      updatedAt: Date.now(),
+    });
 
     const result = await submitFeedbackWithRetry({
       surface: 'verse_match',
       question: verseRef,
       answer: answerPreview,
       feedbackKind: 'match_helpful',
+      userId: user?.id,
+      anonymousSessionId: anonymousSessionIdRef.current,
+      feedbackActorKey: buildFeedbackActorKey(user?.id, anonymousSessionIdRef.current),
       targetRef: group.matchedReference || verseRef,
       targetId: group.sermonId,
       feedbackKey,
@@ -1024,6 +1075,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const removeSermonThumbDown = async (group: SermonGroup) => {
     const { answerPreview, feedbackGroupKey, feedbackKey } = getSermonSentimentFeedbackKeys(group, 'match_not_relevant');
 
+    clearPersistedFeedbackState(feedbackGroupKey, feedbackKey);
     setSermonFeedbackById((prev) => {
       const next = { ...prev };
       delete next[group.sermonId];
@@ -1035,6 +1087,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       question: verseRef,
       answer: answerPreview,
       feedbackKind: 'match_not_relevant',
+      userId: user?.id,
+      anonymousSessionId: anonymousSessionIdRef.current,
+      feedbackActorKey: buildFeedbackActorKey(user?.id, anonymousSessionIdRef.current),
       targetRef: group.matchedReference || verseRef,
       targetId: group.sermonId,
       feedbackKey,
@@ -1075,6 +1130,15 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         details: trimmedDetails,
       },
     }));
+    savePersistedFeedbackState({
+      feedbackKey,
+      feedbackGroupKey,
+      feedbackKind: 'match_not_relevant',
+      feedbackReason: nextDraft.reason,
+      feedbackDetails: trimmedDetails,
+      surface: 'verse_match',
+      updatedAt: Date.now(),
+    });
 
     const result = await submitFeedbackWithRetry({
       surface: 'verse_match',
@@ -1083,6 +1147,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       feedbackKind: 'match_not_relevant',
       feedbackReason: nextDraft.reason,
       feedbackDetails: trimmedDetails,
+      userId: user?.id,
+      anonymousSessionId: anonymousSessionIdRef.current,
+      feedbackActorKey: buildFeedbackActorKey(user?.id, anonymousSessionIdRef.current),
       targetRef: group.matchedReference || verseRef,
       targetId: group.sermonId,
       feedbackKey,

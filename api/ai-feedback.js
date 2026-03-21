@@ -16,6 +16,15 @@ const json = (res, status, body) => {
   res.end(JSON.stringify(body));
 };
 
+const isMissingActorFeedbackColumnError = (error) => {
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    message.includes('user_id') ||
+    message.includes('anonymous_session_id') ||
+    message.includes('feedback_actor_key')
+  );
+};
+
 const getFeedbackConflictKinds = (feedbackKind) => {
   switch (feedbackKind) {
     case 'helpful':
@@ -59,6 +68,9 @@ const buildLegacyFeedbackMatchQuery = (query, {
   answerPreview,
   surface,
   feedbackKind,
+  userId,
+  anonymousSessionId,
+  feedbackActorKey,
   targetRef,
   targetId,
   includeFeedbackKind = true,
@@ -91,6 +103,14 @@ const buildLegacyFeedbackMatchQuery = (query, {
     nextQuery = nextQuery.is('target_id', null);
   }
 
+  if (feedbackActorKey) {
+    nextQuery = nextQuery.eq('feedback_actor_key', feedbackActorKey);
+  } else if (userId) {
+    nextQuery = nextQuery.eq('user_id', userId);
+  } else if (anonymousSessionId) {
+    nextQuery = nextQuery.eq('anonymous_session_id', anonymousSessionId);
+  }
+
   return nextQuery;
 };
 
@@ -99,6 +119,9 @@ const deleteLegacyConflictingFeedback = async (supabase, {
   answerPreview,
   surface,
   feedbackKind,
+  userId,
+  anonymousSessionId,
+  feedbackActorKey,
   targetRef,
   targetId,
 }) => {
@@ -117,6 +140,9 @@ const deleteLegacyConflictingFeedback = async (supabase, {
       answerPreview,
       surface,
       feedbackKind,
+      userId,
+      anonymousSessionId,
+      feedbackActorKey,
       targetRef,
       targetId,
       includeFeedbackKind: false,
@@ -144,6 +170,9 @@ export default async function handler(req, res) {
   const feedbackGroupKey = String(req.body?.feedbackGroupKey || '').trim();
   const feedbackReason = String(req.body?.feedbackReason || '').trim();
   const feedbackDetails = String(req.body?.feedbackDetails || '').trim();
+  const userId = String(req.body?.userId || '').trim();
+  const anonymousSessionId = String(req.body?.anonymousSessionId || '').trim();
+  const feedbackActorKey = String(req.body?.feedbackActorKey || '').trim();
   const action = String(req.body?.action || 'set').trim() || 'set';
   const answerPreview = answer.slice(0, 2000);
   const wasHelpful =
@@ -174,6 +203,9 @@ export default async function handler(req, res) {
           answerPreview,
           surface,
           feedbackKind,
+          userId,
+          anonymousSessionId,
+          feedbackActorKey,
           targetRef,
           targetId,
         }
@@ -181,6 +213,10 @@ export default async function handler(req, res) {
 
       if (!error) {
         error = legacyDelete.error;
+      }
+
+      if (error && isMissingActorFeedbackColumnError(error)) {
+        error = null;
       }
 
       if (error) {
@@ -217,12 +253,19 @@ export default async function handler(req, res) {
         answerPreview,
         surface,
         feedbackKind,
+        userId,
+        anonymousSessionId,
+        feedbackActorKey,
         targetRef,
         targetId,
       });
 
       if (!cleanupError) {
         cleanupError = legacyCleanup.error;
+      }
+
+      if (cleanupError && isMissingActorFeedbackColumnError(cleanupError)) {
+        cleanupError = null;
       }
 
       if (cleanupError) {
@@ -239,6 +282,9 @@ export default async function handler(req, res) {
       feedback_kind: feedbackKind || null,
       feedback_reason: feedbackReason || null,
       feedback_details: feedbackDetails || null,
+      user_id: userId || null,
+      anonymous_session_id: anonymousSessionId || null,
+      feedback_actor_key: feedbackActorKey || null,
       target_ref: targetRef || null,
       target_id: targetId || null,
       feedback_key: feedbackKey,
@@ -254,6 +300,9 @@ export default async function handler(req, res) {
         String(error.message || '').toLowerCase().includes('feedback_group_key') ||
         String(error.message || '').toLowerCase().includes('feedback_reason') ||
         String(error.message || '').toLowerCase().includes('feedback_details') ||
+        String(error.message || '').toLowerCase().includes('user_id') ||
+        String(error.message || '').toLowerCase().includes('anonymous_session_id') ||
+        String(error.message || '').toLowerCase().includes('feedback_actor_key') ||
         String(error.message || '').toLowerCase().includes('there is no unique or exclusion constraint matching')
       )
     ) {
@@ -265,6 +314,9 @@ export default async function handler(req, res) {
         feedback_kind: feedbackKind || null,
         feedback_reason: feedbackReason || null,
         feedback_details: feedbackDetails || null,
+        user_id: userId || null,
+        anonymous_session_id: anonymousSessionId || null,
+        feedback_actor_key: feedbackActorKey || null,
         target_ref: targetRef || null,
         target_id: targetId || null,
       };
@@ -274,7 +326,8 @@ export default async function handler(req, res) {
         fallback.error &&
         (
           String(fallback.error.message || '').toLowerCase().includes('feedback_reason') ||
-          String(fallback.error.message || '').toLowerCase().includes('feedback_details')
+          String(fallback.error.message || '').toLowerCase().includes('feedback_details') ||
+          isMissingActorFeedbackColumnError(fallback.error)
         )
       ) {
         fallback = await supabase.from('ai_feedback').insert({
@@ -283,6 +336,9 @@ export default async function handler(req, res) {
           was_helpful: wasHelpful,
           surface,
           feedback_kind: feedbackKind || null,
+          user_id: userId || null,
+          anonymous_session_id: anonymousSessionId || null,
+          feedback_actor_key: feedbackActorKey || null,
           target_ref: targetRef || null,
           target_id: targetId || null,
         });

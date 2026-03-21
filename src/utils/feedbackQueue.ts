@@ -8,6 +8,9 @@ export type FeedbackPayload = {
   feedbackGroupKey?: string;
   feedbackReason?: string;
   feedbackDetails?: string;
+  userId?: string;
+  anonymousSessionId?: string;
+  feedbackActorKey?: string;
   action?: FeedbackAction;
   surface?: string;
   targetRef?: string;
@@ -79,6 +82,9 @@ const postFeedbackPayload = async (payload: FeedbackPayload) => {
       feedbackGroupKey: payload.feedbackGroupKey,
       feedbackReason: payload.feedbackReason,
       feedbackDetails: payload.feedbackDetails,
+      userId: payload.userId,
+      anonymousSessionId: payload.anonymousSessionId,
+      feedbackActorKey: payload.feedbackActorKey,
       action: payload.action || 'set',
       targetRef: payload.targetRef,
       targetId: payload.targetId,

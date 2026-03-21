@@ -91,11 +91,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [expandedInsightCardIds, setExpandedInsightCardIds] = useState<Set<string>>(new Set());
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const pendingInsightScrollRestoreRef = useRef<{
-    sermonId: string;
-    scrollTop: number;
-    cardOffsetTop: number;
-  } | null>(null);
+  const pendingInsightCollapseRestoreRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!expandedId) return;
@@ -126,19 +122,18 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   }, [search, region]);
 
   useLayoutEffect(() => {
-    const pendingRestore = pendingInsightScrollRestoreRef.current;
-    if (!pendingRestore) return;
+    const sermonId = pendingInsightCollapseRestoreRef.current;
+    if (!sermonId) return;
 
     const scrollContainer = scrollContainerRef.current;
-    const sermonCard = sermonCardRefs.current[pendingRestore.sermonId];
+    const sermonCard = sermonCardRefs.current[sermonId];
     if (!scrollContainer || !sermonCard) {
-      pendingInsightScrollRestoreRef.current = null;
+      pendingInsightCollapseRestoreRef.current = null;
       return;
     }
 
-    const nextCardOffsetTop = sermonCard.offsetTop;
-    scrollContainer.scrollTop = pendingRestore.scrollTop + (nextCardOffsetTop - pendingRestore.cardOffsetTop);
-    pendingInsightScrollRestoreRef.current = null;
+    scrollContainer.scrollTop = Math.max(0, sermonCard.offsetTop - 12);
+    pendingInsightCollapseRestoreRef.current = null;
   }, [expandedInsightCardIds]);
 
   const loadSermons = async () => {
@@ -221,19 +216,8 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   };
 
   const toggleAllInsights = (id: string, trigger?: HTMLButtonElement | null) => {
-    const scrollContainer = scrollContainerRef.current;
-    const sermonCard = sermonCardRefs.current[id];
     trigger?.blur();
-
-    if (scrollContainer && sermonCard) {
-      pendingInsightScrollRestoreRef.current = {
-        sermonId: id,
-        scrollTop: scrollContainer.scrollTop,
-        cardOffsetTop: sermonCard.offsetTop,
-      };
-    } else {
-      pendingInsightScrollRestoreRef.current = null;
-    }
+    pendingInsightCollapseRestoreRef.current = expandedInsightCardIds.has(id) ? id : null;
 
     setExpandedInsightCardIds((prev) => {
       const next = new Set(prev);
