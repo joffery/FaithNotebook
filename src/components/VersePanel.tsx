@@ -818,21 +818,21 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         if (deleteLikeError) throw deleteLikeError;
 
         if ((deletedCount || 0) > 0) {
-          const { data: noteData } = await supabase
-            .from('shared_notes')
-            .select('likes_count')
-            .eq('id', noteId)
-            .maybeSingle();
+          const { error: decrementLikesError } = await supabase.rpc('decrement_likes', {
+            note_id: noteId,
+          });
 
-          const current = (noteData?.likes_count ?? 0);
-          const next = Math.max(0, current - (deletedCount || 0));
+          if (decrementLikesError) throw decrementLikesError;
 
-          const { error: updateLikesError } = await supabase
-            .from('shared_notes')
-            .update({ likes_count: next })
-            .eq('id', noteId);
-
-          if (updateLikesError) throw updateLikesError;
+          setCommunityNotes((prev) => prev.map((note) => (
+            note.id === noteId
+              ? {
+                  ...note,
+                  is_liked_by_user: false,
+                  likes_count: Math.max(0, (note.likes_count || 0) - (deletedCount || 0)),
+                }
+              : note
+          )));
         }
       } else {
         const { error: insertLikeError } = await supabase
@@ -850,23 +850,21 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
           throw insertLikeError;
         }
 
-        const { data: noteData, error: noteDataError } = await supabase
-          .from('shared_notes')
-          .select('likes_count')
-          .eq('id', noteId)
-          .maybeSingle();
+        const { error: incrementLikesError } = await supabase.rpc('increment_likes', {
+          note_id: noteId,
+        });
 
-        if (noteDataError) throw noteDataError;
+        if (incrementLikesError) throw incrementLikesError;
 
-        const current = (noteData?.likes_count ?? 0);
-        const next = current + 1;
-
-        const { error: updateLikesError } = await supabase
-          .from('shared_notes')
-          .update({ likes_count: next })
-          .eq('id', noteId);
-
-        if (updateLikesError) throw updateLikesError;
+        setCommunityNotes((prev) => prev.map((note) => (
+          note.id === noteId
+            ? {
+                ...note,
+                is_liked_by_user: true,
+                likes_count: (note.likes_count || 0) + 1,
+              }
+            : note
+        )));
       }
     } catch (err) {
       console.error('Error toggling note like:', err);
@@ -874,6 +872,8 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       const message = err instanceof Error ? err.message : '';
       if (isMissingNoteLikesTableError(err)) {
         setSaveError('Likes are not ready yet. Please run the latest Supabase migrations for note likes.');
+      } else if (message.toLowerCase().includes('increment_likes') || message.toLowerCase().includes('decrement_likes')) {
+        setSaveError('Likes are unavailable until the latest Supabase likes functions are applied.');
       } else if (message.toLowerCase().includes('likes_count')) {
         setSaveError('Likes are unavailable until migration adds shared_notes.likes_count.');
       } else if (!isUniqueConstraintError(err)) {
