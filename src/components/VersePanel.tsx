@@ -7,6 +7,7 @@ import { parseVerseReference } from '../utils/verseParser';
 import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
 import { buildTimestampedYouTubeUrl, formatVideoTimestamp } from '../utils/youtube';
 import { buildFeedbackKey, hashFeedbackValue } from '../utils/feedback';
+import { flushPendingFeedbackQueue, submitFeedbackWithRetry } from '../utils/feedbackQueue';
 import { ProfileAvatar } from './ProfileAvatar';
 
 type VersePanelProps = {
@@ -174,6 +175,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [sermonFeedbackById, setSermonFeedbackById] = useState<Record<string, 'helpful' | 'not_relevant'>>({});
   const [verseText, setVerseText] = useState('');
   const [copiedVerse, setCopiedVerse] = useState(false);
+  const [feedbackStatusMessage, setFeedbackStatusMessage] = useState<string | null>(null);
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const verseRef = `${book} ${chapter}:${verse}`;
@@ -198,6 +200,16 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   }, [activeTab]);
 
   useEffect(() => {
+    if (!feedbackStatusMessage) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setFeedbackStatusMessage(null);
+    }, 2400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [feedbackStatusMessage]);
+
+  useEffect(() => {
     setExpandedSermonIds(
       new Set(
         sermonGroups
@@ -206,6 +218,10 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       )
     );
   }, [sermonGroups]);
+
+  useEffect(() => {
+    void flushPendingFeedbackQueue();
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -907,25 +923,18 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
         return next;
       });
 
-      try {
-        await fetch('/api/ai-feedback', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            surface: 'verse_match',
-            question: verseRef,
-            answer: answerPreview,
-            feedbackKind: isHelpful ? 'match_helpful' : 'match_not_relevant',
-            targetRef: group.matchedReference || verseRef,
-            targetId: group.sermonId,
-            feedbackKey,
-            feedbackGroupKey,
-            action: 'unset',
-          }),
-        });
-      } catch (error) {
-        console.error('Failed to remove sermon match feedback:', error);
-      }
+      const result = await submitFeedbackWithRetry({
+        surface: 'verse_match',
+        question: verseRef,
+        answer: answerPreview,
+        feedbackKind: isHelpful ? 'match_helpful' : 'match_not_relevant',
+        targetRef: group.matchedReference || verseRef,
+        targetId: group.sermonId,
+        feedbackKey,
+        feedbackGroupKey,
+        action: 'unset',
+      });
+      setFeedbackStatusMessage(result.queued ? 'Feedback removal saved locally and will retry automatically.' : 'Feedback removed.');
       return;
     }
 
@@ -934,25 +943,18 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       [group.sermonId]: nextFeedbackKind,
     }));
 
-    try {
-      await fetch('/api/ai-feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          surface: 'verse_match',
-          question: verseRef,
-          answer: answerPreview,
-          feedbackKind: isHelpful ? 'match_helpful' : 'match_not_relevant',
-          targetRef: group.matchedReference || verseRef,
-          targetId: group.sermonId,
-          feedbackKey,
-          feedbackGroupKey,
-          action: 'set',
-        }),
-      });
-    } catch (error) {
-      console.error('Failed to save sermon match feedback:', error);
-    }
+    const result = await submitFeedbackWithRetry({
+      surface: 'verse_match',
+      question: verseRef,
+      answer: answerPreview,
+      feedbackKind: isHelpful ? 'match_helpful' : 'match_not_relevant',
+      targetRef: group.matchedReference || verseRef,
+      targetId: group.sermonId,
+      feedbackKey,
+      feedbackGroupKey,
+      action: 'set',
+    });
+    setFeedbackStatusMessage(result.queued ? 'Feedback saved locally and will retry automatically.' : 'Feedback saved.');
   };
 
   const toggleSermonExpanded = (sermonId: string, trigger?: HTMLButtonElement | null) => {
@@ -1294,6 +1296,9 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                   <span>Not relevant</span>
                 </button>
               </div>
+              {feedbackStatusMessage && (
+                <p className="mt-2 text-xs text-[#8c6430]">{feedbackStatusMessage}</p>
+              )}
             </div>
           </div>
         )}

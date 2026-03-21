@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { VersePanel } from './VersePanel';
 import { buildFeedbackKey, hashFeedbackValue } from '../utils/feedback';
+import { flushPendingFeedbackQueue, submitFeedbackWithRetry } from '../utils/feedbackQueue';
 
 type AIChatTabProps = {
   onClose: () => void;
@@ -92,6 +93,10 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     }
   }, [messages]);
 
+  useEffect(() => {
+    void flushPendingFeedbackQueue();
+  }, []);
+
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
@@ -150,23 +155,15 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     feedbackGroupKey?: string;
     action?: 'set' | 'unset';
   }) => {
-    try {
-      await fetch('/api/ai-feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          surface: 'ai_chat',
-          question: payload.question,
-          answer: payload.answer,
-          feedbackKind: payload.feedbackKind,
-          feedbackKey: payload.feedbackKey,
-          feedbackGroupKey: payload.feedbackGroupKey,
-          action: payload.action || 'set',
-        }),
-      });
-    } catch (error) {
-      console.error('Failed to save AI feedback:', error);
-    }
+    await submitFeedbackWithRetry({
+      surface: 'ai_chat',
+      question: payload.question,
+      answer: payload.answer,
+      feedbackKind: payload.feedbackKind,
+      feedbackKey: payload.feedbackKey,
+      feedbackGroupKey: payload.feedbackGroupKey,
+      action: payload.action || 'set',
+    });
   };
 
   const getMessageFeedbackBase = (index: number) => {

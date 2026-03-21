@@ -90,6 +90,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
   const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
   const [expandedInsightCardIds, setExpandedInsightCardIds] = useState<Set<string>>(new Set());
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!expandedId) return;
@@ -198,7 +199,12 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
     }
   };
 
-  const toggleAllInsights = (id: string) => {
+  const toggleAllInsights = (id: string, trigger?: HTMLButtonElement | null) => {
+    const scrollContainer = scrollContainerRef.current;
+    const sermonCard = sermonCardRefs.current[id];
+    const previousTop = sermonCard?.getBoundingClientRect().top ?? null;
+    trigger?.blur();
+
     setExpandedInsightCardIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -208,6 +214,14 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
       }
       return next;
     });
+
+    if (scrollContainer && previousTop !== null) {
+      window.requestAnimationFrame(() => {
+        const nextTop = sermonCardRefs.current[id]?.getBoundingClientRect().top ?? null;
+        if (nextTop === null) return;
+        scrollContainer.scrollTop += nextTop - previousTop;
+      });
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -282,7 +296,7 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 space-y-2">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:p-4 space-y-2">
           {loading ? (
             <p className="text-center text-[#2c1810]/60 py-8">Loading sermons…</p>
           ) : filtered.length === 0 ? (
@@ -395,8 +409,8 @@ export function SermonsPanel({ onClose }: SermonsPanelProps) {
                               {verseInsights.length > 3 && (
                                 <button
                                   type="button"
-                                  onClick={() => toggleAllInsights(sermon.id)}
-                                  className="mt-3 text-xs font-medium text-[#8c6430] hover:text-[#6f4f22] hover:underline"
+                                  onClick={(e) => toggleAllInsights(sermon.id, e.currentTarget)}
+                                  className="mt-3 inline-flex min-h-11 items-center justify-center rounded-xl border border-[#c49a5c]/30 bg-[#f6efe3] px-4 py-2 text-sm font-semibold text-[#8c6430] shadow-sm transition-colors hover:bg-[#ecdabf] hover:text-[#6f4f22]"
                                 >
                                   {showingAllInsights ? 'Show fewer insights' : `Show all ${verseInsights.length} insights`}
                                 </button>
