@@ -1215,6 +1215,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
     const isOpen = expandedSermonIds.has(group.sermonId);
     const sermonDate = formatSermonDate(group.youtubePublishedAt);
     const watchTimestamp = formatVideoTimestamp(group.startSeconds);
+    const activeFeedback = sermonFeedbackById[group.sermonId];
 
     return (
       <div
@@ -1275,22 +1276,24 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => submitSermonFeedback(group, true)}
-                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                    sermonFeedbackById[group.sermonId] === 'helpful'
-                      ? 'bg-[#c49a5c]/16 text-[#2c1810]'
-                      : 'text-[#2c1810]/60 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
+                  className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                    activeFeedback === 'helpful'
+                      ? 'border-[#2c1810] bg-[#2c1810] text-white shadow-sm'
+                      : 'border-[#c49a5c]/30 bg-white/70 text-[#2c1810]/70 hover:bg-[#c49a5c]/12 hover:text-[#2c1810]'
                   }`}
+                  aria-pressed={activeFeedback === 'helpful'}
                 >
                   <ThumbsUp size={14} />
                   <span>Helpful</span>
                 </button>
                 <button
                   onClick={() => submitSermonFeedback(group, false)}
-                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                    sermonFeedbackById[group.sermonId] === 'not_relevant'
-                      ? 'bg-[#c49a5c]/16 text-[#2c1810]'
-                      : 'text-[#2c1810]/60 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
+                  className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                    activeFeedback === 'not_relevant'
+                      ? 'border-[#2c1810] bg-[#2c1810] text-white shadow-sm'
+                      : 'border-[#c49a5c]/30 bg-white/70 text-[#2c1810]/70 hover:bg-[#c49a5c]/12 hover:text-[#2c1810]'
                   }`}
+                  aria-pressed={activeFeedback === 'not_relevant'}
                 >
                   <ThumbsDown size={14} />
                   <span>Not relevant</span>

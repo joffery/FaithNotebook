@@ -60,6 +60,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   const [helpfulnessFeedbackByMessageIndex, setHelpfulnessFeedbackByMessageIndex] = useState<Record<number, 'helpful' | 'not_helpful'>>({});
   const [accuracyFeedbackByMessageIndex, setAccuracyFeedbackByMessageIndex] = useState<Record<number, 'accurate' | 'inaccurate'>>({});
   const [flaggedMessageIndexes, setFlaggedMessageIndexes] = useState<Record<number, boolean>>({});
+  const [feedbackStatusByMessageIndex, setFeedbackStatusByMessageIndex] = useState<Record<number, string>>({});
   const [versePanelRef, setVersePanelRef] = useState<{ book: string; chapter: number; verse: number } | null>(null);
   const [expandedSummaryIndex, setExpandedSummaryIndex] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -96,6 +97,22 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   useEffect(() => {
     void flushPendingFeedbackQueue();
   }, []);
+
+  const setFeedbackStatus = (index: number, message: string) => {
+    setFeedbackStatusByMessageIndex((prev) => ({
+      ...prev,
+      [index]: message,
+    }));
+
+    window.setTimeout(() => {
+      setFeedbackStatusByMessageIndex((prev) => {
+        if (prev[index] !== message) return prev;
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
+    }, 2400);
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -155,7 +172,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     feedbackGroupKey?: string;
     action?: 'set' | 'unset';
   }) => {
-    await submitFeedbackWithRetry({
+    return await submitFeedbackWithRetry({
       surface: 'ai_chat',
       question: payload.question,
       answer: payload.answer,
@@ -193,7 +210,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
         return next;
       });
 
-      await sendFeedback({
+      const result = await sendFeedback({
         question: getQuestionForMessage(index),
         answer: message.content,
         feedbackKind: nextFeedbackKind,
@@ -201,6 +218,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
         feedbackGroupKey,
         action: 'unset',
       });
+      setFeedbackStatus(index, result.queued ? 'Feedback removal saved locally and will retry automatically.' : 'Feedback removed.');
       return;
     }
 
@@ -209,13 +227,14 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       [index]: nextFeedbackKind,
     }));
 
-    await sendFeedback({
+    const result = await sendFeedback({
       question: getQuestionForMessage(index),
       answer: message.content,
       feedbackKind: nextFeedbackKind,
       feedbackKey,
       feedbackGroupKey,
     });
+    setFeedbackStatus(index, result.queued ? 'Feedback saved locally and will retry automatically.' : 'Feedback saved. Tap again to undo.');
   };
 
   const handleAccuracyFeedback = async (message: Message, index: number, isAccurate: boolean) => {
@@ -231,7 +250,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
         return next;
       });
 
-      await sendFeedback({
+      const result = await sendFeedback({
         question: getQuestionForMessage(index),
         answer: message.content,
         feedbackKind: nextFeedbackKind,
@@ -239,6 +258,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
         feedbackGroupKey,
         action: 'unset',
       });
+      setFeedbackStatus(index, result.queued ? 'Feedback removal saved locally and will retry automatically.' : 'Feedback removed.');
       return;
     }
 
@@ -247,13 +267,14 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       [index]: nextFeedbackKind,
     }));
 
-    await sendFeedback({
+    const result = await sendFeedback({
       question: getQuestionForMessage(index),
       answer: message.content,
       feedbackKind: nextFeedbackKind,
       feedbackKey,
       feedbackGroupKey,
     });
+    setFeedbackStatus(index, result.queued ? 'Feedback saved locally and will retry automatically.' : 'Feedback saved. Tap again to undo.');
   };
 
   const handleLooksWrongFeedback = async (message: Message, index: number) => {
@@ -267,7 +288,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
         [index]: false,
       }));
 
-      await sendFeedback({
+      const result = await sendFeedback({
         question: getQuestionForMessage(index),
         answer: message.content,
         feedbackKind: 'looks_wrong',
@@ -275,6 +296,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
         feedbackGroupKey,
         action: 'unset',
       });
+      setFeedbackStatus(index, result.queued ? 'Feedback removal saved locally and will retry automatically.' : 'Feedback removed.');
       return;
     }
 
@@ -283,13 +305,14 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       [index]: true,
     }));
 
-    await sendFeedback({
+    const result = await sendFeedback({
       question: getQuestionForMessage(index),
       answer: message.content,
       feedbackKind: 'looks_wrong',
       feedbackKey,
       feedbackGroupKey,
     });
+    setFeedbackStatus(index, result.queued ? 'Feedback saved locally and will retry automatically.' : 'Feedback saved. Tap again to undo.');
   };
 
   const handleCopy = async (content: string, index: number) => {
@@ -303,6 +326,13 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
       console.error('Failed to copy AI response:', error);
     }
   };
+
+  const feedbackButtonClassName = (isActive: boolean) =>
+    `inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+      isActive
+        ? 'border-[#2c1810] bg-[#2c1810] text-white shadow-sm'
+        : 'border-[#c49a5c]/30 bg-white/70 text-[#2c1810]/70 hover:bg-[#c49a5c]/12 hover:text-[#2c1810]'
+    }`;
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center sm:p-4 overscroll-contain">
@@ -366,66 +396,56 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
                           </button>
                           <button
                             onClick={() => handleHelpfulnessFeedback(message, idx, true)}
-                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                              helpfulnessFeedbackByMessageIndex[idx] === 'helpful'
-                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
-                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
-                            }`}
+                            className={feedbackButtonClassName(helpfulnessFeedbackByMessageIndex[idx] === 'helpful')}
                             aria-label="Helpful answer"
+                            aria-pressed={helpfulnessFeedbackByMessageIndex[idx] === 'helpful'}
                           >
                             <ThumbsUp size={14} />
                             <span>Helpful</span>
                           </button>
                           <button
                             onClick={() => handleHelpfulnessFeedback(message, idx, false)}
-                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                              helpfulnessFeedbackByMessageIndex[idx] === 'not_helpful'
-                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
-                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
-                            }`}
+                            className={feedbackButtonClassName(helpfulnessFeedbackByMessageIndex[idx] === 'not_helpful')}
                             aria-label="Not helpful answer"
+                            aria-pressed={helpfulnessFeedbackByMessageIndex[idx] === 'not_helpful'}
                           >
                             <ThumbsDown size={14} />
                             <span>Not helpful</span>
                           </button>
                           <button
                             onClick={() => handleAccuracyFeedback(message, idx, true)}
-                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                              accuracyFeedbackByMessageIndex[idx] === 'accurate'
-                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
-                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
-                            }`}
+                            className={feedbackButtonClassName(accuracyFeedbackByMessageIndex[idx] === 'accurate')}
                             aria-label="Accurate answer"
+                            aria-pressed={accuracyFeedbackByMessageIndex[idx] === 'accurate'}
                           >
                             <Check size={14} />
                             <span>Accurate</span>
                           </button>
                           <button
                             onClick={() => handleAccuracyFeedback(message, idx, false)}
-                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                              accuracyFeedbackByMessageIndex[idx] === 'inaccurate'
-                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
-                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
-                            }`}
+                            className={feedbackButtonClassName(accuracyFeedbackByMessageIndex[idx] === 'inaccurate')}
                             aria-label="Not accurate answer"
+                            aria-pressed={accuracyFeedbackByMessageIndex[idx] === 'inaccurate'}
                           >
                             <X size={14} />
                             <span>Not accurate</span>
                           </button>
                           <button
                             onClick={() => handleLooksWrongFeedback(message, idx)}
-                            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                              flaggedMessageIndexes[idx]
-                                ? 'bg-[#c49a5c]/16 text-[#2c1810]'
-                                : 'text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810]'
-                            }`}
+                            className={feedbackButtonClassName(!!flaggedMessageIndexes[idx])}
                             aria-label="Something looks wrong"
+                            aria-pressed={!!flaggedMessageIndexes[idx]}
                           >
                             <AlertCircle size={14} />
                             <span>Looks wrong</span>
                           </button>
                         </div>
                       </div>
+                      {feedbackStatusByMessageIndex[idx] && (
+                        <p className="mb-2 text-right text-xs font-medium text-[#8c6430]">
+                          {feedbackStatusByMessageIndex[idx]}
+                        </p>
+                      )}
                       <div className="leading-relaxed prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-strong:text-[#2c1810] prose-headings:text-[#2c1810]">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {message.content}
