@@ -1,4 +1,5 @@
 import { normalizeBibleBookName } from '../utils/verseParser';
+import { createSearchMatcher } from '../utils/searchText';
 
 export type BibleVerse = {
   verse: number;
@@ -483,28 +484,33 @@ export function getAvailableBibleChapters(): BibleChapter[] {
 }
 
 export function searchAvailableBibleText(query: string, limit: number = 30): BibleSearchResult[] {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) return [];
+  const matcher = createSearchMatcher(query);
+  if (!matcher.hasQuery) return [];
 
-  // Split into words so "baptism water" matches verses containing both words in any order
-  const words = normalizedQuery.split(/\s+/).filter(Boolean);
-  const results: BibleSearchResult[] = [];
+  const results: Array<BibleSearchResult & { score: number; order: number }> = [];
+  let order = 0;
 
   getAvailableBibleChapters().forEach((chapterData) => {
     chapterData.verses.forEach((verse) => {
-      const lower = verse.text.toLowerCase();
-      if (!words.every((w) => lower.includes(w))) return;
+      const reference = `${chapterData.book} ${chapterData.chapter}:${verse.verse}`;
+      const score = matcher.scoreText(reference, verse.text);
+      if (score <= 0) return;
 
       results.push({
         book: chapterData.book,
         chapter: chapterData.chapter,
         verse: verse.verse,
         text: verse.text,
+        score,
+        order: order += 1,
       });
     });
   });
 
-  return results.slice(0, limit);
+  return results
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .slice(0, limit)
+    .map(({ score: _score, order: _order, ...result }) => result);
 }
 
 const getFallbackBibleChapter = (book: string, chapter: number): BibleChapter | null => {

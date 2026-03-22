@@ -3,7 +3,13 @@ import { Search, X, ArrowRight, BookOpen } from 'lucide-react';
 import { bibleBooks } from '../data/bibleBooks';
 import { searchAvailableBibleText } from '../data/bibleText';
 import { normalizeBibleBookName, parseVerseReference } from '../utils/verseParser';
-import { getSermonReferenceIndex, getVerseNumbersForChapter, hasChapterSermons, SermonReferenceIndex } from '../utils/sermonReferences';
+import {
+  getSermonReferenceIndex,
+  getVerseNumbersForChapter,
+  hasChapterSermons,
+  searchSermonVerseSuggestions,
+  SermonReferenceIndex
+} from '../utils/sermonReferences';
 
 type BibleSearchModalProps = {
   onClose: () => void;
@@ -74,6 +80,10 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
     if (query.trim().length < 3) return [];
     return searchAvailableBibleText(query, 24);
   }, [query]);
+  const sermonSuggestions = useMemo(() => {
+    if (query.trim().length < 3) return [];
+    return searchSermonVerseSuggestions(sermonReferenceIndex, query, 8);
+  }, [query, sermonReferenceIndex]);
   const referenceHasSermons = referenceMatch
     ? typeof referenceMatch.verse === 'number'
       ? getVerseNumbersForChapter(sermonReferenceIndex, referenceMatch.book, referenceMatch.chapter).has(referenceMatch.verse)
@@ -87,7 +97,7 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
           <div>
             <h2 className="text-xl font-serif text-[#2c1810]">Bible Search</h2>
             <p className="text-sm text-[#2c1810]/60 mt-1">
-              Jump to any reference (e.g. Acts 2:38) or search by keyword in chapters you've read.
+              Jump to any reference or search loaded Bible text. We also suggest related Scriptures from sermon insights.
             </p>
           </div>
           <button
@@ -147,21 +157,77 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
 
           <div className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45">
-              Available Text Matches
+              Suggested Scriptures
             </p>
 
             {query.trim().length < 3 ? (
               <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
                 <p className="text-[#2c1810] font-medium">Start with a reference or a few words</p>
                 <p className="mt-2 text-sm text-[#2c1810]/60">
-                  Keyword search works on chapters you've already read. For any passage, type the reference directly — e.g. "John 3" or "Romans 6:4".
+                  Type something like `baptize`, `humble`, or `forgiveness` to get Scripture suggestions, or jump straight to a reference such as `Romans 6:4`.
+                </p>
+              </div>
+            ) : sermonSuggestions.length === 0 ? (
+              <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
+                <p className="text-[#2c1810] font-medium">No related Scripture suggestions yet</p>
+                <p className="mt-2 text-sm text-[#2c1810]/60">
+                  Try a more specific keyword or jump directly to a reference like `Acts 2:38`.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sermonSuggestions.map((suggestion) => (
+                  <button
+                    key={`${suggestion.referenceLabel}-${suggestion.sermonTitle}`}
+                    type="button"
+                    onClick={() => onSelectResult(suggestion.book, suggestion.chapter, suggestion.verse)}
+                    className="w-full rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-4 text-left hover:bg-[#c49a5c]/8 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-[#2c1810]">
+                          <BookOpen size={16} className="text-[#c49a5c] flex-shrink-0" />
+                          <span className="font-medium">{suggestion.referenceLabel}</span>
+                        </div>
+                        <p className="mt-1 text-sm text-[#2c1810]/60">
+                          {suggestion.sermonTitle
+                            ? `Matched from sermon insight: ${suggestion.sermonTitle}`
+                            : 'Matched from related sermon insight'}
+                        </p>
+                        {suggestion.supportingCount > 1 && (
+                          <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#c49a5c]/12 px-2.5 py-1 text-[11px] font-medium text-[#8c6430]">
+                            {suggestion.supportingCount} sermon matches
+                          </span>
+                        )}
+                        <p className="mt-2 text-sm leading-relaxed text-[#2c1810]/78">
+                          {trimPreview(suggestion.insight, 180)}
+                        </p>
+                      </div>
+                      <ArrowRight size={18} className="text-[#2c1810]/35 flex-shrink-0" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45">
+              Loaded Text Matches
+            </p>
+
+            {query.trim().length < 3 ? (
+              <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
+                <p className="text-[#2c1810] font-medium">Search opened chapters here</p>
+                <p className="mt-2 text-sm text-[#2c1810]/60">
+                  As you read more chapters, their text becomes searchable here too.
                 </p>
               </div>
             ) : textResults.length === 0 ? (
               <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
-                <p className="text-[#2c1810] font-medium">No text matches found</p>
+                <p className="text-[#2c1810] font-medium">No loaded text matches found</p>
                 <p className="mt-2 text-sm text-[#2c1810]/60">
-                  Try a direct reference like `Matthew 28:19` or different keywords.
+                  Try one of the Scripture suggestions above, or jump straight to a reference.
                 </p>
               </div>
             ) : (
