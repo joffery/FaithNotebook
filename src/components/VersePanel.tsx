@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Heart, Lock, Unlock, ThumbsUp, ThumbsDown, Copy, Check, Trash2 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { getBibleChapter, ensureBibleChapter } from '../data/bibleText';
+import { BibleChapter, getBibleChapter, ensureBibleChapter } from '../data/bibleText';
 import { parseVerseReference } from '../utils/verseParser';
 import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
 import { buildTimestampedYouTubeUrl, formatVideoTimestamp } from '../utils/youtube';
@@ -200,10 +200,12 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
   const [sermonThumbDownFeedbackById, setSermonThumbDownFeedbackById] = useState<Record<string, { reason: string; details: string }>>({});
   const [sermonThumbDownDraft, setSermonThumbDownDraft] = useState<SermonThumbDownDraft | null>(null);
   const [verseText, setVerseText] = useState('');
+  const [chapterData, setChapterData] = useState<BibleChapter | null>(null);
   const [copiedVerse, setCopiedVerse] = useState(false);
   const [feedbackStatusBySermonId, setFeedbackStatusBySermonId] = useState<Record<string, string>>({});
   const sermonCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const anonymousSessionIdRef = useRef<string>(getAnonymousFeedbackSessionId());
+  const activeVerseRef = useRef<HTMLParagraphElement | null>(null);
 
   const verseRef = `${book} ${chapter}:${verse}`;
 
@@ -279,6 +281,7 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
 
       if (!mounted) return;
 
+      setChapterData(chapterData || null);
       const matchedVerse = chapterData?.verses.find((item) => item.verse === verse);
       setVerseText(matchedVerse?.text || '');
     };
@@ -289,6 +292,15 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
       mounted = false;
     };
   }, [book, chapter, verse]);
+
+  useEffect(() => {
+    if (!chapterData || !activeVerseRef.current) return;
+
+    activeVerseRef.current.scrollIntoView({
+      block: 'center',
+      behavior: 'smooth',
+    });
+  }, [chapterData, verse]);
 
   const loadCurrentDisplayName = async () => {
     if (!user) return;
@@ -1245,9 +1257,39 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45 mb-2">
                   Scripture
                 </p>
-                <p className="text-lg font-serif leading-relaxed text-[#2c1810]">
-                  {verseText || verseRef}
+                <p className="text-sm text-[#2c1810]/60 mb-3">
+                  {book} {chapter}
                 </p>
+                {chapterData ? (
+                  <div className="max-h-[320px] overflow-y-auto rounded-xl border border-[#c49a5c]/15 bg-white/70 px-3 py-3">
+                    <div className="space-y-2">
+                      {chapterData.verses.map((item) => {
+                        const isActiveVerse = item.verse === verse;
+
+                        return (
+                          <p
+                            key={item.verse}
+                            ref={isActiveVerse ? activeVerseRef : null}
+                            className={`rounded-lg px-3 py-2 text-base font-serif leading-relaxed ${
+                              isActiveVerse
+                                ? 'bg-[#c49a5c]/12 text-[#2c1810]'
+                                : 'text-[#2c1810]/78'
+                            }`}
+                          >
+                            <span className="mr-2 font-sans text-sm font-semibold text-[#8c6430]">
+                              {item.verse}
+                            </span>
+                            {item.text}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-lg font-serif leading-relaxed text-[#2c1810]">
+                    {verseText || verseRef}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
