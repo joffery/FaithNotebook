@@ -588,6 +588,7 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
           book={previewVerse.book}
           chapter={previewVerse.chapter}
           verse={previewVerse.verse}
+          scriptureDisplayMode="chapter"
           onClose={() => setPreviewVerse(null)}
         />
       )}

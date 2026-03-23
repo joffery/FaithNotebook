@@ -22,6 +22,7 @@ type VersePanelProps = {
   book: string;
   chapter: number;
   verse: number;
+  scriptureDisplayMode?: 'single' | 'chapter';
   onClose: () => void;
 };
 
@@ -182,7 +183,13 @@ const isMissingNoteLikesTableError = (error: unknown) => {
   return code === '42P01' || message.includes('note_likes') || message.includes('relation') && message.includes('does not exist');
 };
 
-export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
+export function VersePanel({
+  book,
+  chapter,
+  verse,
+  scriptureDisplayMode = 'single',
+  onClose,
+}: VersePanelProps) {
   const { user, profile } = useAuth();
   const [activeTab, setActiveTab] = useState<'sermons' | 'community' | 'my-notes'>('sermons');
   const [myNote, setMyNote] = useState('');
@@ -1257,38 +1264,45 @@ export function VersePanel({ book, chapter, verse, onClose }: VersePanelProps) {
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45 mb-2">
                   Scripture
                 </p>
-                <p className="text-sm text-[#2c1810]/60 mb-3">
-                  {book} {chapter}
-                </p>
-                {chapterData ? (
-                  <div className="max-h-[320px] overflow-y-auto rounded-xl border border-[#c49a5c]/15 bg-white/70 px-3 py-3">
-                    <div className="space-y-2">
-                      {chapterData.verses.map((item) => {
-                        const isActiveVerse = item.verse === verse;
+                {scriptureDisplayMode === 'chapter' && chapterData ? (
+                  <>
+                    <p className="text-sm text-[#2c1810]/60 mb-3">
+                      {book} {chapter}
+                    </p>
+                    <div className="max-h-[320px] overflow-y-auto rounded-xl border border-[#c49a5c]/15 bg-white/70 px-3 py-3">
+                      <div className="space-y-2">
+                        {chapterData.verses.map((item) => {
+                          const isActiveVerse = item.verse === verse;
 
-                        return (
-                          <p
-                            key={item.verse}
-                            ref={isActiveVerse ? activeVerseRef : null}
-                            className={`rounded-lg px-3 py-2 text-base font-serif leading-relaxed ${
-                              isActiveVerse
-                                ? 'bg-[#c49a5c]/12 text-[#2c1810]'
-                                : 'text-[#2c1810]/78'
-                            }`}
-                          >
-                            <span className="mr-2 font-sans text-sm font-semibold text-[#8c6430]">
-                              {item.verse}
-                            </span>
-                            {item.text}
-                          </p>
-                        );
-                      })}
+                          return (
+                            <p
+                              key={item.verse}
+                              ref={isActiveVerse ? activeVerseRef : null}
+                              className={`rounded-lg px-3 py-2 text-base font-serif leading-relaxed ${
+                                isActiveVerse
+                                  ? 'bg-[#c49a5c]/12 text-[#2c1810]'
+                                  : 'text-[#2c1810]/78'
+                              }`}
+                            >
+                              <span className="mr-2 font-sans text-sm font-semibold text-[#8c6430]">
+                                {item.verse}
+                              </span>
+                              {item.text}
+                            </p>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 ) : (
-                  <p className="text-lg font-serif leading-relaxed text-[#2c1810]">
-                    {verseText || verseRef}
-                  </p>
+                  <>
+                    <p className="text-sm text-[#2c1810]/60 mb-3">
+                      {verseRef}
+                    </p>
+                    <p className="text-lg font-serif leading-relaxed text-[#2c1810]">
+                      {verseText || verseRef}
+                    </p>
+                  </>
                 )}
               </div>
               <button
