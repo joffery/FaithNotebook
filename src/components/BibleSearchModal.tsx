@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, ArrowRight, BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
 import { bibleBooks } from '../data/bibleBooks';
-import { BibleSearchResult, ensureBibleChapter, getBibleChapter } from '../data/bibleText';
+import { BibleChapter, BibleSearchResult, ensureBibleChapter, getBibleChapter } from '../data/bibleText';
 import { BibleSearchSource, getInstantBibleSearchPreview, searchBibleText } from '../data/bibleSearch';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
@@ -16,9 +16,7 @@ import {
   getSermonReferenceIndex,
   getVerseNumbersForChapter,
   hasChapterSermons,
-  searchSermonVerseSuggestions,
   SermonReferenceIndex,
-  SermonSearchSuggestion,
 } from '../utils/sermonReferences';
 import { VersePanel } from './VersePanel';
 
@@ -42,6 +40,15 @@ type UnifiedBibleSearchResult = {
   score: number;
   text: string;
   hasRelatedSermons: boolean;
+};
+
+type PassagePreview = {
+  rangeLabel: string;
+  verses: Array<{
+    verse: number;
+    text: string;
+    isPrimaryMatch: boolean;
+  }>;
 };
 
 const PAGE_SIZE = 8;
@@ -123,68 +130,54 @@ const parseReferenceMatch = (query: string): ReferenceMatch | null => {
   };
 };
 
-const mergeSearchResults = (
-  textResults: BibleSearchResult[],
-  sermonSuggestions: SermonSearchSuggestion[],
-  sermonReferenceIndex: SermonReferenceIndex | null,
-  fetchedVerseTexts: Record<string, string>,
-): UnifiedBibleSearchResult[] => {
-  const merged = new Map<string, UnifiedBibleSearchResult>();
+const buildPassagePreview = (
+  chapterData: BibleChapter | null | undefined,
+  result: UnifiedBibleSearchResult
+): PassagePreview => {
+  if (!chapterData) {
+    return {
+      rangeLabel: result.referenceLabel,
+      verses: [
+        {
+          verse: result.verse,
+          text: result.text,
+          isPrimaryMatch: true,
+        },
+      ],
+    };
+  }
 
-  const upsert = (
-    book: string,
-    chapter: number,
-    verse: number,
-    score: number,
-    text: string,
-    hasRelatedSermons: boolean
-  ) => {
-    const key = getVerseKey(book, chapter, verse);
-    const existing = merged.get(key);
+  const verseIndex = chapterData.verses.findIndex((item) => item.verse === result.verse);
+  if (verseIndex < 0) {
+    return {
+      rangeLabel: result.referenceLabel,
+      verses: [
+        {
+          verse: result.verse,
+          text: result.text,
+          isPrimaryMatch: true,
+        },
+      ],
+    };
+  }
 
-    if (!existing) {
-      merged.set(key, {
-        book,
-        chapter,
-        verse,
-        referenceLabel: `${book} ${chapter}:${verse}`,
-        score,
-        text,
-        hasRelatedSermons,
-      });
-      return;
-    }
+  const startIndex = Math.max(0, verseIndex - 1);
+  const endIndex = Math.min(chapterData.verses.length - 1, verseIndex + 1);
+  const previewVerses = chapterData.verses.slice(startIndex, endIndex + 1);
+  const startVerse = previewVerses[0]?.verse ?? result.verse;
+  const endVerse = previewVerses[previewVerses.length - 1]?.verse ?? result.verse;
 
-    existing.score = Math.max(existing.score, score) + Math.min(existing.score, score) * 0.2;
-    existing.text = existing.text || text;
-    existing.hasRelatedSermons = existing.hasRelatedSermons || hasRelatedSermons;
+  return {
+    rangeLabel:
+      startVerse === endVerse
+        ? `${result.book} ${result.chapter}:${startVerse}`
+        : `${result.book} ${result.chapter}:${startVerse}-${endVerse}`,
+    verses: previewVerses.map((item) => ({
+      verse: item.verse,
+      text: item.text,
+      isPrimaryMatch: item.verse === result.verse,
+    })),
   };
-
-  textResults.forEach((result) => {
-    const key = getVerseKey(result.book, result.chapter, result.verse);
-    upsert(
-      result.book,
-      result.chapter,
-      result.verse,
-      result.score || 0,
-      result.text || fetchedVerseTexts[key] || '',
-      getVerseNumbersForChapter(sermonReferenceIndex, result.book, result.chapter).has(result.verse)
-    );
-  });
-
-  sermonSuggestions.forEach((suggestion) => {
-    const key = getVerseKey(suggestion.book, suggestion.chapter, suggestion.verse);
-    upsert(
-      suggestion.book,
-      suggestion.chapter,
-      suggestion.verse,
-      suggestion.score || 0,
-      fetchedVerseTexts[key] || '',
-      true
-    );
-  });
-
-  return Array.from(merged.values()).sort((a, b) => b.score - a.score || a.book.localeCompare(b.book) || a.chapter - b.chapter || a.verse - b.verse);
 };
 
 export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModalProps) {
@@ -193,7 +186,7 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
   const [page, setPage] = useState(1);
   const [sermonReferenceIndex, setSermonReferenceIndex] = useState<SermonReferenceIndex | null>(null);
   const [previewVerse, setPreviewVerse] = useState<{ book: string; chapter: number; verse: number } | null>(null);
-  const [fetchedVerseTexts, setFetchedVerseTexts] = useState<Record<string, string>>({});
+  const [passagePreviews, setPassagePreviews] = useState<Record<string, PassagePreview>>({});
   const [textResults, setTextResults] = useState<BibleSearchResult[]>([]);
   const [isSearchingText, setIsSearchingText] = useState(false);
   const [searchSource, setSearchSource] = useState<BibleSearchSource>(
@@ -251,13 +244,30 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
   }, [query]);
 
   const referenceMatch = useMemo(() => parseReferenceMatch(query), [query]);
-  const sermonSuggestions = useMemo(() => {
-    if (debouncedQuery.trim().length < 3) return [];
-    return searchSermonVerseSuggestions(sermonReferenceIndex, debouncedQuery, 80);
-  }, [debouncedQuery, sermonReferenceIndex]);
   const searchResults = useMemo(
-    () => mergeSearchResults(textResults, sermonSuggestions, sermonReferenceIndex, fetchedVerseTexts),
-    [fetchedVerseTexts, sermonReferenceIndex, sermonSuggestions, textResults]
+    () =>
+      [...textResults]
+        .map((result) => ({
+          book: result.book,
+          chapter: result.chapter,
+          verse: result.verse,
+          referenceLabel: `${result.book} ${result.chapter}:${result.verse}`,
+          score: result.score || 0,
+          text: result.text || '',
+          hasRelatedSermons: getVerseNumbersForChapter(
+            sermonReferenceIndex,
+            result.book,
+            result.chapter
+          ).has(result.verse),
+        }))
+        .sort(
+          (a, b) =>
+            b.score - a.score ||
+            a.book.localeCompare(b.book) ||
+            a.chapter - b.chapter ||
+            a.verse - b.verse
+        ),
+    [sermonReferenceIndex, textResults]
   );
   const highlightQuery = debouncedQuery.trim().length >= 3 ? debouncedQuery : query;
 
@@ -325,7 +335,9 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
     let mounted = true;
 
     const loadMissingVerseTexts = async () => {
-      const missing = paginatedResults.filter((result) => !result.text);
+      const missing = paginatedResults.filter(
+        (result) => !passagePreviews[getVerseKey(result.book, result.chapter, result.verse)]
+      );
       if (missing.length === 0) return;
 
       const nextEntries = await Promise.all(
@@ -333,16 +345,15 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
           const key = getVerseKey(result.book, result.chapter, result.verse);
           const cachedChapter = getBibleChapter(result.book, result.chapter);
           const chapterData = cachedChapter || await ensureBibleChapter(result.book, result.chapter, false);
-          const verseText = chapterData?.verses.find((item) => item.verse === result.verse)?.text || '';
-          return [key, verseText] as const;
+          return [key, buildPassagePreview(chapterData, result)] as const;
         })
       );
 
       if (!mounted) return;
 
-      setFetchedVerseTexts((prev) => ({
+      setPassagePreviews((prev) => ({
         ...prev,
-        ...Object.fromEntries(nextEntries.filter((entry) => entry[1])),
+        ...Object.fromEntries(nextEntries),
       }));
     };
 
@@ -351,7 +362,7 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
     return () => {
       mounted = false;
     };
-  }, [paginatedResults]);
+  }, [paginatedResults, passagePreviews]);
 
   const openVerseResult = (book: string, chapter: number, verse: number) => {
     onNavigateResult(book, chapter);
@@ -480,32 +491,64 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
               <>
                 <div className="space-y-3">
                   {paginatedResults.map((result) => (
-                    <button
-                      key={getVerseKey(result.book, result.chapter, result.verse)}
-                      type="button"
-                      onClick={() => openVerseResult(result.book, result.chapter, result.verse)}
-                      className="w-full rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-4 text-left hover:bg-[#c49a5c]/8 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 text-[#2c1810]">
-                            <BookOpen size={16} className="text-[#c49a5c] flex-shrink-0" />
-                            <span className="font-medium">{result.referenceLabel}</span>
+                    (() => {
+                      const key = getVerseKey(result.book, result.chapter, result.verse);
+                      const passagePreview = passagePreviews[key];
+
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => openVerseResult(result.book, result.chapter, result.verse)}
+                          className="w-full rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-4 text-left hover:bg-[#c49a5c]/8 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 text-[#2c1810]">
+                                <BookOpen size={16} className="text-[#c49a5c] flex-shrink-0" />
+                                <span className="font-medium">
+                                  {passagePreview?.rangeLabel || result.referenceLabel}
+                                </span>
+                              </div>
+                              {result.hasRelatedSermons && (
+                                <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#c49a5c]/12 px-2.5 py-1 text-[11px] font-medium text-[#8c6430]">
+                                  Related sermons available
+                                </span>
+                              )}
+                              <div className="mt-3 space-y-2">
+                                {(passagePreview?.verses || []).length > 0 ? (
+                                  passagePreview?.verses.map((verse) => (
+                                    <p
+                                      key={`${key}-${verse.verse}`}
+                                      className={`rounded-xl px-3 py-2 text-sm leading-relaxed ${
+                                        verse.isPrimaryMatch
+                                          ? 'bg-[#c49a5c]/10 text-[#2c1810]'
+                                          : 'text-[#2c1810]/72'
+                                      }`}
+                                    >
+                                      <span className="mr-2 font-semibold text-[#8c6430]">
+                                        {verse.verse}
+                                      </span>
+                                      {renderHighlightedText(
+                                        trimPreview(verse.text, verse.isPrimaryMatch ? 220 : 140),
+                                        highlightQuery
+                                      )}
+                                    </p>
+                                  ))
+                                ) : (
+                                  <p className="text-sm leading-relaxed text-[#2c1810]/78">
+                                    {result.text
+                                      ? renderHighlightedText(trimPreview(result.text), highlightQuery)
+                                      : 'Loading Scripture context...'}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <ArrowRight size={18} className="text-[#2c1810]/35 flex-shrink-0" />
                           </div>
-                          {result.hasRelatedSermons && (
-                            <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#c49a5c]/12 px-2.5 py-1 text-[11px] font-medium text-[#8c6430]">
-                              Related sermons available
-                            </span>
-                          )}
-                          <p className="mt-2 text-sm leading-relaxed text-[#2c1810]/78">
-                            {result.text
-                              ? renderHighlightedText(trimPreview(result.text), highlightQuery)
-                              : 'Loading Scripture text...'}
-                          </p>
-                        </div>
-                        <ArrowRight size={18} className="text-[#2c1810]/35 flex-shrink-0" />
-                      </div>
-                    </button>
+                        </button>
+                      );
+                    })()
                   ))}
                 </div>
 
