@@ -519,25 +519,16 @@ const getFallbackBibleChapter = (book: string, chapter: number): BibleChapter | 
   return bibleChapters[key] || null;
 };
 
-// Prefer a modern translation API, then fall back to previously bundled local text.
-export async function ensureBibleChapter(book: string, chapter: number, forceRefresh: boolean = false): Promise<BibleChapter | null> {
+export async function fetchBibleChapterFromApi(book: string, chapter: number): Promise<BibleChapter | null> {
   const normalizedBook = normalizeBibleBookName(book);
-  const key = getChapterKey(normalizedBook, chapter);
-  const cached = getBibleChapter(normalizedBook, chapter);
-  const fallback = getFallbackBibleChapter(normalizedBook, chapter);
-
-  if (cached && !forceRefresh) return cached;
-
   const bookCode = BOOK_API_CODES[normalizedBook];
-  if (!bookCode) {
-    return cached || fallback || null;
-  }
+  if (!bookCode) return null;
 
   try {
     const resp = await fetch(`https://bible.helloao.org/api/${BIBLE_TRANSLATION_ID}/${bookCode}/${chapter}.json`);
-    if (!resp.ok) return cached || fallback || null;
+    if (!resp.ok) return null;
     const data = await resp.json();
-    if (!Array.isArray(data?.chapter?.content)) return cached || fallback || null;
+    if (!Array.isArray(data?.chapter?.content)) return null;
 
     const verses = data.chapter.content
       .filter((item: any) => item?.type === 'verse' && Number.isFinite(item?.number))
@@ -556,9 +547,28 @@ export async function ensureBibleChapter(book: string, chapter: number, forceRef
       }))
       .filter((v: BibleVerse) => Number.isFinite(v.verse) && !!v.text);
 
-    if (verses.length === 0) return cached || fallback || null;
+    if (verses.length === 0) return null;
 
-    const chapterData: BibleChapter = { book: normalizedBook, chapter, verses };
+    return { book: normalizedBook, chapter, verses };
+  } catch (err) {
+    console.error('Error fetching chapter', book, chapter, err);
+    return null;
+  }
+}
+
+// Prefer a modern translation API, then fall back to previously bundled local text.
+export async function ensureBibleChapter(book: string, chapter: number, forceRefresh: boolean = false): Promise<BibleChapter | null> {
+  const normalizedBook = normalizeBibleBookName(book);
+  const key = getChapterKey(normalizedBook, chapter);
+  const cached = getBibleChapter(normalizedBook, chapter);
+  const fallback = getFallbackBibleChapter(normalizedBook, chapter);
+
+  if (cached && !forceRefresh) return cached;
+
+  try {
+    const chapterData = await fetchBibleChapterFromApi(normalizedBook, chapter);
+    if (!chapterData) return cached || fallback || null;
+
     storeChapter(key, chapterData);
     return chapterData;
   } catch (err) {

@@ -25,26 +25,35 @@ const SEARCH_STOP_WORDS = new Set([
   'your',
 ]);
 
-const TOKEN_EQUIVALENTS: Record<string, string[]> = {
-  baptize: ['baptize', 'baptized', 'baptizing', 'baptism'],
-  baptized: ['baptize', 'baptized', 'baptizing', 'baptism'],
-  baptism: ['baptize', 'baptized', 'baptizing', 'baptism'],
-  disciple: ['disciple', 'disciples', 'discipleship'],
-  discipleship: ['disciple', 'disciples', 'discipleship'],
-  forgive: ['forgive', 'forgiven', 'forgiveness', 'forgiving'],
-  forgiven: ['forgive', 'forgiven', 'forgiveness', 'forgiving'],
-  forgiveness: ['forgive', 'forgiven', 'forgiveness', 'forgiving'],
-  humble: ['humble', 'humbled', 'humbly', 'humility'],
-  humility: ['humble', 'humbled', 'humbly', 'humility'],
-  obey: ['obey', 'obeyed', 'obeying', 'obedience', 'obedient'],
-  obedience: ['obey', 'obeyed', 'obeying', 'obedience', 'obedient'],
-  repent: ['repent', 'repented', 'repenting', 'repentance'],
-  repentance: ['repent', 'repented', 'repenting', 'repentance'],
-  save: ['save', 'saved', 'saving', 'salvation'],
-  salvation: ['save', 'saved', 'saving', 'salvation'],
-  serve: ['serve', 'served', 'serving', 'service', 'servant'],
-  servant: ['serve', 'served', 'serving', 'service', 'servant'],
-};
+const TOKEN_SYNONYM_GROUPS = [
+  ['baptize', 'baptized', 'baptizing', 'baptism'],
+  ['believe', 'belief', 'believing', 'faith', 'trust', 'trusted'],
+  ['church', 'churches', 'body', 'congregation', 'fellowship', 'kingdom'],
+  ['disciple', 'disciples', 'discipleship', 'follower', 'followers'],
+  ['evil', 'wicked', 'wickedness', 'sin', 'sins', 'sinful'],
+  ['fear', 'fears', 'afraid', 'anxious', 'anxiety', 'worry', 'worried'],
+  ['forgive', 'forgiven', 'forgiveness', 'forgiving', 'mercy', 'merciful'],
+  ['grace', 'gracious', 'favor', 'favour'],
+  ['grief', 'grieve', 'grieving', 'sorrow', 'sorrows', 'mourning', 'mourn'],
+  ['holy', 'holiness', 'righteous', 'righteousness'],
+  ['humble', 'humbled', 'humbly', 'humility', 'meek', 'meekness'],
+  ['joy', 'joyful', 'rejoice', 'rejoicing', 'glad', 'gladness'],
+  ['love', 'loved', 'loving', 'beloved', 'compassion'],
+  ['obey', 'obeyed', 'obeying', 'obedience', 'obedient', 'submit', 'submission'],
+  ['pray', 'prayer', 'praying', 'prayed'],
+  ['proud', 'pride', 'arrogant', 'boast', 'boasting'],
+  ['repent', 'repented', 'repenting', 'repentance', 'turn', 'turning'],
+  ['save', 'saved', 'saving', 'salvation', 'rescue', 'rescued'],
+  ['serve', 'served', 'serving', 'service', 'servant', 'servants'],
+  ['teach', 'teacher', 'teaching', 'doctrine', 'instruction'],
+  ['true', 'truth', 'truthful'],
+];
+
+const TOKEN_EQUIVALENTS: Record<string, string[]> = Object.fromEntries(
+  TOKEN_SYNONYM_GROUPS.flatMap((group) =>
+    group.map((token) => [token, group.filter((candidate) => candidate !== token)])
+  )
+);
 
 const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
 
@@ -56,6 +65,45 @@ export function normalizeSearchText(value: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+const stemSearchToken = (token: string): string => {
+  let stem = normalizeSearchText(token);
+  if (!stem) return stem;
+
+  if (stem.length > 6 && stem.endsWith('ility')) {
+    stem = `${stem.slice(0, -5)}le`;
+  } else if (stem.length > 5 && stem.endsWith('ness')) {
+    stem = stem.slice(0, -4);
+  } else if (stem.length > 5 && stem.endsWith('ment')) {
+    stem = stem.slice(0, -4);
+  } else if (stem.length > 5 && stem.endsWith('tion')) {
+    stem = stem.slice(0, -4);
+  } else if (stem.length > 5 && stem.endsWith('ance')) {
+    stem = stem.slice(0, -4);
+  } else if (stem.length > 5 && stem.endsWith('ence')) {
+    stem = stem.slice(0, -4);
+  }
+
+  if (stem.length > 5 && stem.endsWith('ies')) {
+    stem = `${stem.slice(0, -3)}y`;
+  } else if (stem.length > 5 && stem.endsWith('ing')) {
+    stem = stem.slice(0, -3);
+  } else if (stem.length > 4 && stem.endsWith('ied')) {
+    stem = `${stem.slice(0, -3)}y`;
+  } else if (stem.length > 4 && stem.endsWith('ed')) {
+    stem = stem.slice(0, -2);
+  } else if (stem.length > 4 && stem.endsWith('es')) {
+    stem = stem.slice(0, -2);
+  } else if (stem.length > 3 && stem.endsWith('s')) {
+    stem = stem.slice(0, -1);
+  }
+
+  if (stem.length > 4 && /([b-df-hj-np-tv-z])\1$/.test(stem)) {
+    stem = stem.slice(0, -1);
+  }
+
+  return stem;
+};
 
 const getTokenVariants = (token: string): string[] => {
   const variants = new Set<string>([token]);
@@ -85,12 +133,54 @@ const getTokenVariants = (token: string): string[] => {
   return unique(Array.from(variants).map(normalizeSearchText));
 };
 
+const hasNearTypoMatch = (needle: string, haystack: string): boolean => {
+  if (!needle || !haystack) return false;
+  if (needle === haystack) return true;
+
+  const needleLength = needle.length;
+  const haystackLength = haystack.length;
+  if (needleLength < 4 || haystackLength < 4) return false;
+  if (Math.abs(needleLength - haystackLength) > 1) return false;
+  if (needle[0] !== haystack[0]) return false;
+
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+
+  while (i < needleLength && j < haystackLength) {
+    if (needle[i] === haystack[j]) {
+      i += 1;
+      j += 1;
+      continue;
+    }
+
+    edits += 1;
+    if (edits > 1) return false;
+
+    if (needleLength > haystackLength) {
+      i += 1;
+    } else if (needleLength < haystackLength) {
+      j += 1;
+    } else {
+      i += 1;
+      j += 1;
+    }
+  }
+
+  if (i < needleLength || j < haystackLength) {
+    edits += 1;
+  }
+
+  return edits <= 1;
+};
+
 export type SearchMatcher = {
   hasQuery: boolean;
   normalizedQuery: string;
   tokens: Array<{
     raw: string;
     variants: string[];
+    stems: string[];
   }>;
   scoreText: (...values: Array<string | null | undefined>) => number;
 };
@@ -108,6 +198,7 @@ export function createSearchMatcher(query: string): SearchMatcher {
   const tokens = selectedTokens.map((raw) => ({
     raw,
     variants: getTokenVariants(raw),
+    stems: unique(getTokenVariants(raw).map(stemSearchToken)),
   }));
 
   return {
@@ -122,6 +213,8 @@ export function createSearchMatcher(query: string): SearchMatcher {
 
       const combined = normalizedValues.join(' ');
       const bounded = ` ${combined} `;
+      const textTokens = unique(combined.split(' ').filter(Boolean));
+      const textStems = new Set(textTokens.map(stemSearchToken).filter(Boolean));
       let score = 0;
       let matchedTokenCount = 0;
 
@@ -144,6 +237,23 @@ export function createSearchMatcher(query: string): SearchMatcher {
             tokenScore = Math.max(tokenScore, 6);
           }
         });
+
+        if (tokenScore === 0 && token.stems.length > 0) {
+          const hasStemMatch = token.stems.some((stem) => stem.length >= 3 && textStems.has(stem));
+          if (hasStemMatch) {
+            tokenScore = 5;
+          }
+        }
+
+        if (tokenScore === 0 && token.stems.length > 0) {
+          const hasTypoMatch = token.stems.some((stem) =>
+            stem.length >= 4 &&
+            Array.from(textStems).some((textStem) => hasNearTypoMatch(stem, textStem))
+          );
+          if (hasTypoMatch) {
+            tokenScore = 4;
+          }
+        }
 
         if (tokenScore > 0) {
           matchedTokenCount += 1;

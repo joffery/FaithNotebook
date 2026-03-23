@@ -1,7 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, ArrowRight, BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
 import { bibleBooks } from '../data/bibleBooks';
-import { BibleSearchResult, ensureBibleChapter, getBibleChapter, searchAvailableBibleText } from '../data/bibleText';
+import { BibleSearchResult, ensureBibleChapter, getBibleChapter } from '../data/bibleText';
+import { BibleSearchSource, getInstantBibleSearchPreview, searchBibleText } from '../data/bibleSearch';
+import { isSupabaseConfigured } from '../lib/supabase';
+import {
+  BibleSearchIndexStatus,
+  getBibleSearchIndexStatus,
+  startBibleSearchIndexSync,
+  subscribeBibleSearchIndexStatus,
+} from '../data/bibleSearchIndex';
+import { createSearchMatcher } from '../utils/searchText';
 import { normalizeBibleBookName, parseVerseReference } from '../utils/verseParser';
 import {
   getSermonReferenceIndex,
@@ -36,6 +45,7 @@ type UnifiedBibleSearchResult = {
 };
 
 const PAGE_SIZE = 8;
+const SEARCH_DEBOUNCE_MS = 250;
 
 const trimPreview = (text: string, max = 180) => {
   const cleaned = text.replace(/\s+/g, ' ').trim();
@@ -44,6 +54,44 @@ const trimPreview = (text: string, max = 180) => {
 };
 
 const getVerseKey = (book: string, chapter: number, verse: number) => `${book}-${chapter}-${verse}`;
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const getHighlightTerms = (query: string) => {
+  const matcher = createSearchMatcher(query);
+  if (!matcher.hasQuery) return [];
+
+  return Array.from(
+    new Set(
+      matcher.tokens.flatMap((token) => [token.raw, ...token.variants])
+    )
+  )
+    .filter((term) => /[a-z]/i.test(term) && term.length >= 3)
+    .sort((a, b) => b.length - a.length);
+};
+
+const renderHighlightedText = (text: string, query: string): ReactNode => {
+  const terms = getHighlightTerms(query);
+  if (!text || terms.length === 0) return text;
+
+  const pattern = new RegExp(`(${terms.map(escapeRegex).join('|')})`, 'gi');
+  const parts = text.split(pattern);
+  if (parts.length === 1) return text;
+
+  return parts.map((part, index) => {
+    const isMatch = terms.some((term) => part.toLowerCase() === term.toLowerCase());
+    if (!isMatch) return <span key={`${part}-${index}`}>{part}</span>;
+
+    return (
+      <mark
+        key={`${part}-${index}`}
+        className="rounded bg-[#f1d39c]/70 px-0.5 text-[#2c1810]"
+      >
+        {part}
+      </mark>
+    );
+  });
+};
 
 const parseReferenceMatch = (query: string): ReferenceMatch | null => {
   const trimmed = query.trim();
@@ -141,10 +189,23 @@ const mergeSearchResults = (
 
 export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModalProps) {
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(1);
   const [sermonReferenceIndex, setSermonReferenceIndex] = useState<SermonReferenceIndex | null>(null);
   const [previewVerse, setPreviewVerse] = useState<{ book: string; chapter: number; verse: number } | null>(null);
   const [fetchedVerseTexts, setFetchedVerseTexts] = useState<Record<string, string>>({});
+  const [textResults, setTextResults] = useState<BibleSearchResult[]>([]);
+  const [isSearchingText, setIsSearchingText] = useState(false);
+  const [searchSource, setSearchSource] = useState<BibleSearchSource>(
+    isSupabaseConfigured ? 'supabase' : 'local'
+  );
+  const [indexStatus, setIndexStatus] = useState<BibleSearchIndexStatus>({
+    indexedChapters: 0,
+    totalChapters: 1189,
+    isComplete: false,
+    isSyncing: false,
+  });
+  const searchAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -159,22 +220,46 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+
+    void getBibleSearchIndexStatus().then((status) => {
+      if (mounted) setIndexStatus(status);
+    });
+
+    const unsubscribe = subscribeBibleSearchIndexStatus((status) => {
+      if (mounted) setIndexStatus(status);
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     setPage(1);
   }, [query]);
 
-  const referenceMatch = useMemo(() => parseReferenceMatch(query), [query]);
-  const textResults = useMemo(() => {
-    if (query.trim().length < 3) return [];
-    return searchAvailableBibleText(query, 80);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedQuery(query);
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
   }, [query]);
+
+  const referenceMatch = useMemo(() => parseReferenceMatch(query), [query]);
   const sermonSuggestions = useMemo(() => {
-    if (query.trim().length < 3) return [];
-    return searchSermonVerseSuggestions(sermonReferenceIndex, query, 80);
-  }, [query, sermonReferenceIndex]);
+    if (debouncedQuery.trim().length < 3) return [];
+    return searchSermonVerseSuggestions(sermonReferenceIndex, debouncedQuery, 80);
+  }, [debouncedQuery, sermonReferenceIndex]);
   const searchResults = useMemo(
     () => mergeSearchResults(textResults, sermonSuggestions, sermonReferenceIndex, fetchedVerseTexts),
     [fetchedVerseTexts, sermonReferenceIndex, sermonSuggestions, textResults]
   );
+  const highlightQuery = debouncedQuery.trim().length >= 3 ? debouncedQuery : query;
 
   const totalPages = Math.max(1, Math.ceil(searchResults.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -184,6 +269,57 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
       ? getVerseNumbersForChapter(sermonReferenceIndex, referenceMatch.book, referenceMatch.chapter).has(referenceMatch.verse)
       : hasChapterSermons(sermonReferenceIndex, referenceMatch.book, referenceMatch.chapter)
     : false;
+
+  useEffect(() => {
+    if (debouncedQuery.trim().length < 3) {
+      setTextResults([]);
+      setIsSearchingText(false);
+      setSearchSource(isSupabaseConfigured ? 'supabase' : 'local');
+      return;
+    }
+
+    let mounted = true;
+    searchAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    searchAbortControllerRef.current = abortController;
+    const preview = getInstantBibleSearchPreview(debouncedQuery, 120);
+    if (preview) {
+      setTextResults(preview.results);
+      setSearchSource(preview.source);
+    }
+    setIsSearchingText(true);
+
+    void searchBibleText(debouncedQuery, 120, abortController.signal)
+      .then(({ results, source }) => {
+        if (!mounted) return;
+        setTextResults(results);
+        setSearchSource(source);
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        console.error('Bible search failed:', error);
+        setTextResults([]);
+      })
+      .finally(() => {
+        if (mounted && searchAbortControllerRef.current === abortController) {
+          setIsSearchingText(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+      abortController.abort();
+      if (searchAbortControllerRef.current === abortController) {
+        searchAbortControllerRef.current = null;
+      }
+    };
+  }, [debouncedQuery, indexStatus.indexedChapters]);
+
+  useEffect(() => {
+    if (debouncedQuery.trim().length < 3 || searchSource !== 'local' || indexStatus.isComplete || indexStatus.isSyncing) return;
+    void startBibleSearchIndexSync();
+  }, [debouncedQuery, indexStatus.isComplete, indexStatus.isSyncing, searchSource]);
 
   useEffect(() => {
     let mounted = true;
@@ -293,7 +429,7 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
             </div>
           )}
 
-          <div className="space-y-3">
+            <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45">
                 Search Results
@@ -305,11 +441,32 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
               )}
             </div>
 
+            {query.trim().length >= 3 && (
+              <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-3">
+                <p className="text-sm text-[#2c1810]/70">
+                  {searchSource === 'supabase'
+                    ? 'Searching the full Bible from the Supabase verse index.'
+                    : indexStatus.isComplete
+                      ? 'Full Bible search is ready locally.'
+                      : indexStatus.isSyncing
+                        ? `Building local Bible search index... ${indexStatus.indexedChapters}/${indexStatus.totalChapters} chapters ready.`
+                        : `Preparing local Bible search... ${indexStatus.indexedChapters}/${indexStatus.totalChapters} chapters ready so far.`}
+                </p>
+              </div>
+            )}
+
             {query.trim().length < 3 ? (
               <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
                 <p className="text-[#2c1810] font-medium">Start with a reference or a few words</p>
                 <p className="mt-2 text-sm text-[#2c1810]/60">
                   Try something like `Acts 2:38`, `humble`, or `baptize`.
+                </p>
+              </div>
+            ) : isSearchingText && searchResults.length === 0 ? (
+              <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
+                <p className="text-[#2c1810] font-medium">Searching Scripture...</p>
+                <p className="mt-2 text-sm text-[#2c1810]/60">
+                  Pulling together the most relevant verses for your query.
                 </p>
               </div>
             ) : searchResults.length === 0 ? (
@@ -341,7 +498,9 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
                             </span>
                           )}
                           <p className="mt-2 text-sm leading-relaxed text-[#2c1810]/78">
-                            {result.text ? trimPreview(result.text) : 'Loading Scripture text...'}
+                            {result.text
+                              ? renderHighlightedText(trimPreview(result.text), highlightQuery)
+                              : 'Loading Scripture text...'}
                           </p>
                         </div>
                         <ArrowRight size={18} className="text-[#2c1810]/35 flex-shrink-0" />

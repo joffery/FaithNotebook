@@ -23,6 +23,7 @@ export type SermonSearchSuggestion = {
   sermonTitle: string;
   supportingCount: number;
   score?: number;
+  searchContext?: string[];
 };
 
 const emptyIndex = (): SermonReferenceIndex => ({
@@ -154,6 +155,11 @@ export async function getSermonReferenceIndex(): Promise<SermonReferenceIndex> {
         if (existing) {
           existing.supportingCount += 1;
           existing.scoreSeed = Math.max(existing.scoreSeed, scoreSeed);
+          existing.searchContext = Array.from(new Set([
+            ...(existing.searchContext || []),
+            sermonSummary,
+            ...sermonTags,
+          ].filter(Boolean)));
           return;
         }
 
@@ -166,6 +172,7 @@ export async function getSermonReferenceIndex(): Promise<SermonReferenceIndex> {
           sermonTitle,
           supportingCount: 1,
           scoreSeed,
+          searchContext: uniqueStrings([sermonSummary, ...sermonTags]),
         });
       });
     }
@@ -205,7 +212,8 @@ export const searchSermonVerseSuggestions = (
     const score = matcher.scoreText(
       suggestion.referenceLabel,
       suggestion.insight,
-      suggestion.sermonTitle
+      suggestion.sermonTitle,
+      ...(suggestion.searchContext || [])
     );
     if (score <= 0) return;
 
@@ -236,3 +244,5 @@ export const searchSermonVerseSuggestions = (
     .slice(0, limit)
     .map(({ order: _order, ...suggestion }) => suggestion);
 };
+
+const uniqueStrings = (values: string[]) => Array.from(new Set(values.filter((value) => value && value.trim().length > 0)));
