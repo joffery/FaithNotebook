@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Loader2, X, Copy, Check, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Send, Loader2, X, Copy, Check, ThumbsUp, ThumbsDown, Pencil } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { VersePanel } from './VersePanel';
@@ -94,6 +94,8 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
   const lastAssistantMsgRef = useRef<HTMLDivElement | null>(null);
   const prevMessageCount = useRef(0);
   const anonymousSessionIdRef = useRef<string>(getAnonymousFeedbackSessionId());
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingUserMessageRef = useRef<string>('');
 
   useEffect(() => {
     const count = messages.length;
@@ -124,6 +126,12 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
 
   useEffect(() => {
     void flushPendingFeedbackQueue();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -179,12 +187,16 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setLoading(true);
+    pendingUserMessageRef.current = userMessage;
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
 
     try {
       const response = await fetch('/api/gemini-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userMessage }),
+        signal: abortController.signal,
       });
 
       if (!response.ok) {
@@ -205,13 +217,40 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
         sources: data?.sources || [],
       }]);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+
       console.error('Error calling AI:', error);
       setMessages(prev => [
         ...prev,
         { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' },
       ]);
     } finally {
+      abortControllerRef.current = null;
+      pendingUserMessageRef.current = '';
       setLoading(false);
+    }
+  };
+
+  const stopMessage = () => {
+    if (!loading) return;
+
+    const pendingUserMessage = pendingUserMessageRef.current;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    pendingUserMessageRef.current = '';
+    setLoading(false);
+
+    if (pendingUserMessage) {
+      setInput(pendingUserMessage);
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.role === 'user' && lastMessage.content === pendingUserMessage) {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
     }
   };
 
@@ -458,6 +497,19 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
         : 'border-[#c49a5c]/30 bg-white/70 text-[#2c1810]/70 hover:bg-[#c49a5c]/12 hover:text-[#2c1810]'
     }`;
 
+  const isEditableUserMessage = (index: number) =>
+    messages[index]?.role === 'user' &&
+    !loading &&
+    (index === messages.length - 1 || (index === messages.length - 2 && messages[index + 1]?.role === 'assistant'));
+
+  const editUserMessage = (index: number) => {
+    const message = messages[index];
+    if (!message || message.role !== 'user') return;
+
+    setInput(message.content);
+    setMessages((prev) => prev.slice(0, index));
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center sm:p-4 overscroll-contain">
       <div className="bg-gradient-to-b from-[#f5e6d3] to-[#e8d4ba] w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[90vh] flex flex-col sm:rounded-lg shadow-2xl">
@@ -589,7 +641,20 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
                       )}
                     </>
                   ) : (
-                    <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    <>
+                      <div className="mb-2 flex items-center justify-end">
+                        {isEditableUserMessage(idx) && (
+                          <button
+                            onClick={() => editUserMessage(idx)}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[#2c1810]/55 hover:bg-[#c49a5c]/10 hover:text-[#2c1810] transition-colors"
+                          >
+                            <Pencil size={12} />
+                            <span>Edit</span>
+                          </button>
+                        )}
+                      </div>
+                      <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    </>
                   )}
                 </div>
               </div>
@@ -615,13 +680,22 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
             disabled={loading}
             className="flex-1 min-w-0 px-4 py-3 bg-white/70 border border-[#c49a5c]/20 rounded-xl text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50 disabled:opacity-50"
           />
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || loading}
-            className="px-4 py-3 bg-[#c49a5c] text-white rounded-xl hover:bg-[#b38a4d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-          >
-            <Send size={20} />
-          </button>
+          {loading ? (
+            <button
+              onClick={stopMessage}
+              className="px-4 py-3 bg-[#2c1810] text-white rounded-xl hover:bg-[#1f120d] transition-colors flex-shrink-0"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim()}
+              className="px-4 py-3 bg-[#c49a5c] text-white rounded-xl hover:bg-[#b38a4d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              <Send size={20} />
+            </button>
+          )}
         </div>
       </div>
 

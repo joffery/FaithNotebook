@@ -238,11 +238,9 @@ function App() {
       {showBibleSearch && (
         <BibleSearchModal
           onClose={() => setShowBibleSearch(false)}
-          onSelectResult={(book, chapter, verse) => {
+          onNavigateResult={(book, chapter) => {
             setCurrentBook(normalizeBibleBookName(book));
             setCurrentChapter(chapter);
-            setSelectedVerseFromApp(verse ?? null);
-            setShowBibleSearch(false);
             setShowAIChat(false);
             setShowSermons(false);
             setShowProfileSettings(false);

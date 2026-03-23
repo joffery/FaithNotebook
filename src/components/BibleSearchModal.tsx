@@ -1,19 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, X, ArrowRight, BookOpen } from 'lucide-react';
+import { Search, X, ArrowRight, BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
 import { bibleBooks } from '../data/bibleBooks';
-import { searchAvailableBibleText } from '../data/bibleText';
+import { BibleSearchResult, ensureBibleChapter, getBibleChapter, searchAvailableBibleText } from '../data/bibleText';
 import { normalizeBibleBookName, parseVerseReference } from '../utils/verseParser';
 import {
   getSermonReferenceIndex,
   getVerseNumbersForChapter,
   hasChapterSermons,
   searchSermonVerseSuggestions,
-  SermonReferenceIndex
+  SermonReferenceIndex,
+  SermonSearchSuggestion,
 } from '../utils/sermonReferences';
+import { VersePanel } from './VersePanel';
 
 type BibleSearchModalProps = {
   onClose: () => void;
-  onSelectResult: (book: string, chapter: number, verse?: number) => void;
+  onNavigateResult: (book: string, chapter: number) => void;
 };
 
 type ReferenceMatch = {
@@ -23,11 +25,25 @@ type ReferenceMatch = {
   label: string;
 };
 
-const trimPreview = (text: string, max = 160) => {
+type UnifiedBibleSearchResult = {
+  book: string;
+  chapter: number;
+  verse: number;
+  referenceLabel: string;
+  score: number;
+  text: string;
+  hasRelatedSermons: boolean;
+};
+
+const PAGE_SIZE = 8;
+
+const trimPreview = (text: string, max = 180) => {
   const cleaned = text.replace(/\s+/g, ' ').trim();
   if (cleaned.length <= max) return cleaned;
   return `${cleaned.slice(0, max).trim()}...`;
 };
+
+const getVerseKey = (book: string, chapter: number, verse: number) => `${book}-${chapter}-${verse}`;
 
 const parseReferenceMatch = (query: string): ReferenceMatch | null => {
   const trimmed = query.trim();
@@ -59,9 +75,76 @@ const parseReferenceMatch = (query: string): ReferenceMatch | null => {
   };
 };
 
-export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalProps) {
+const mergeSearchResults = (
+  textResults: BibleSearchResult[],
+  sermonSuggestions: SermonSearchSuggestion[],
+  sermonReferenceIndex: SermonReferenceIndex | null,
+  fetchedVerseTexts: Record<string, string>,
+): UnifiedBibleSearchResult[] => {
+  const merged = new Map<string, UnifiedBibleSearchResult>();
+
+  const upsert = (
+    book: string,
+    chapter: number,
+    verse: number,
+    score: number,
+    text: string,
+    hasRelatedSermons: boolean
+  ) => {
+    const key = getVerseKey(book, chapter, verse);
+    const existing = merged.get(key);
+
+    if (!existing) {
+      merged.set(key, {
+        book,
+        chapter,
+        verse,
+        referenceLabel: `${book} ${chapter}:${verse}`,
+        score,
+        text,
+        hasRelatedSermons,
+      });
+      return;
+    }
+
+    existing.score = Math.max(existing.score, score) + Math.min(existing.score, score) * 0.2;
+    existing.text = existing.text || text;
+    existing.hasRelatedSermons = existing.hasRelatedSermons || hasRelatedSermons;
+  };
+
+  textResults.forEach((result) => {
+    const key = getVerseKey(result.book, result.chapter, result.verse);
+    upsert(
+      result.book,
+      result.chapter,
+      result.verse,
+      result.score || 0,
+      result.text || fetchedVerseTexts[key] || '',
+      getVerseNumbersForChapter(sermonReferenceIndex, result.book, result.chapter).has(result.verse)
+    );
+  });
+
+  sermonSuggestions.forEach((suggestion) => {
+    const key = getVerseKey(suggestion.book, suggestion.chapter, suggestion.verse);
+    upsert(
+      suggestion.book,
+      suggestion.chapter,
+      suggestion.verse,
+      suggestion.score || 0,
+      fetchedVerseTexts[key] || '',
+      true
+    );
+  });
+
+  return Array.from(merged.values()).sort((a, b) => b.score - a.score || a.book.localeCompare(b.book) || a.chapter - b.chapter || a.verse - b.verse);
+};
+
+export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModalProps) {
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
   const [sermonReferenceIndex, setSermonReferenceIndex] = useState<SermonReferenceIndex | null>(null);
+  const [previewVerse, setPreviewVerse] = useState<{ book: string; chapter: number; verse: number } | null>(null);
+  const [fetchedVerseTexts, setFetchedVerseTexts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let mounted = true;
@@ -75,20 +158,69 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
     };
   }, []);
 
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
+
   const referenceMatch = useMemo(() => parseReferenceMatch(query), [query]);
   const textResults = useMemo(() => {
     if (query.trim().length < 3) return [];
-    return searchAvailableBibleText(query, 24);
+    return searchAvailableBibleText(query, 80);
   }, [query]);
   const sermonSuggestions = useMemo(() => {
     if (query.trim().length < 3) return [];
-    return searchSermonVerseSuggestions(sermonReferenceIndex, query, 8);
+    return searchSermonVerseSuggestions(sermonReferenceIndex, query, 80);
   }, [query, sermonReferenceIndex]);
+  const searchResults = useMemo(
+    () => mergeSearchResults(textResults, sermonSuggestions, sermonReferenceIndex, fetchedVerseTexts),
+    [fetchedVerseTexts, sermonReferenceIndex, sermonSuggestions, textResults]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(searchResults.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedResults = searchResults.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const referenceHasSermons = referenceMatch
     ? typeof referenceMatch.verse === 'number'
       ? getVerseNumbersForChapter(sermonReferenceIndex, referenceMatch.book, referenceMatch.chapter).has(referenceMatch.verse)
       : hasChapterSermons(sermonReferenceIndex, referenceMatch.book, referenceMatch.chapter)
     : false;
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadMissingVerseTexts = async () => {
+      const missing = paginatedResults.filter((result) => !result.text);
+      if (missing.length === 0) return;
+
+      const nextEntries = await Promise.all(
+        missing.map(async (result) => {
+          const key = getVerseKey(result.book, result.chapter, result.verse);
+          const cachedChapter = getBibleChapter(result.book, result.chapter);
+          const chapterData = cachedChapter || await ensureBibleChapter(result.book, result.chapter, false);
+          const verseText = chapterData?.verses.find((item) => item.verse === result.verse)?.text || '';
+          return [key, verseText] as const;
+        })
+      );
+
+      if (!mounted) return;
+
+      setFetchedVerseTexts((prev) => ({
+        ...prev,
+        ...Object.fromEntries(nextEntries.filter((entry) => entry[1])),
+      }));
+    };
+
+    void loadMissingVerseTexts();
+
+    return () => {
+      mounted = false;
+    };
+  }, [paginatedResults]);
+
+  const openVerseResult = (book: string, chapter: number, verse: number) => {
+    onNavigateResult(book, chapter);
+    setPreviewVerse({ book, chapter, verse });
+  };
 
   return (
     <div className="fixed inset-0 z-[75] bg-black/45 flex items-center justify-center p-4 overscroll-contain">
@@ -97,7 +229,7 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
           <div>
             <h2 className="text-xl font-serif text-[#2c1810]">Bible Search</h2>
             <p className="text-sm text-[#2c1810]/60 mt-1">
-              Jump to any reference or search loaded Bible text. We also suggest related Scriptures from sermon insights.
+              Search Scripture by reference or keyword. Results are ranked by relevance.
             </p>
           </div>
           <button
@@ -132,16 +264,22 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
               </p>
               <button
                 type="button"
-                onClick={() => onSelectResult(referenceMatch.book, referenceMatch.chapter, referenceMatch.verse)}
+                onClick={() => {
+                  if (typeof referenceMatch.verse === 'number') {
+                    openVerseResult(referenceMatch.book, referenceMatch.chapter, referenceMatch.verse);
+                    return;
+                  }
+
+                  onNavigateResult(referenceMatch.book, referenceMatch.chapter);
+                  onClose();
+                }}
                 className="w-full rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-4 text-left hover:bg-[#c49a5c]/8 transition-colors"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium text-[#2c1810]">{referenceMatch.label}</p>
                     <p className="mt-1 text-sm text-[#2c1810]/60">
-                      {referenceMatch.verse
-                        ? 'Open this Scripture with related sermons and notes'
-                        : 'Open this chapter directly'}
+                      {referenceMatch.verse ? 'Open this Scripture' : 'Open this chapter directly'}
                     </p>
                     {referenceHasSermons && (
                       <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#c49a5c]/12 px-2.5 py-1 text-[11px] font-medium text-[#8c6430]">
@@ -156,123 +294,101 @@ export function BibleSearchModal({ onClose, onSelectResult }: BibleSearchModalPr
           )}
 
           <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45">
-              Suggested Scriptures
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45">
+                Search Results
+              </p>
+              {query.trim().length >= 3 && searchResults.length > 0 && (
+                <p className="text-xs text-[#2c1810]/50">
+                  {searchResults.length} result{searchResults.length === 1 ? '' : 's'}
+                </p>
+              )}
+            </div>
 
             {query.trim().length < 3 ? (
               <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
                 <p className="text-[#2c1810] font-medium">Start with a reference or a few words</p>
                 <p className="mt-2 text-sm text-[#2c1810]/60">
-                  Type something like `baptize`, `humble`, or `forgiveness` to get Scripture suggestions, or jump straight to a reference such as `Romans 6:4`.
+                  Try something like `Acts 2:38`, `humble`, or `baptize`.
                 </p>
               </div>
-            ) : sermonSuggestions.length === 0 ? (
+            ) : searchResults.length === 0 ? (
               <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
-                <p className="text-[#2c1810] font-medium">No related Scripture suggestions yet</p>
+                <p className="text-[#2c1810] font-medium">No Scripture matches found</p>
                 <p className="mt-2 text-sm text-[#2c1810]/60">
-                  Try a more specific keyword or jump directly to a reference like `Acts 2:38`.
+                  Try a more specific keyword or a direct reference.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {sermonSuggestions.map((suggestion) => (
-                  <button
-                    key={`${suggestion.referenceLabel}-${suggestion.sermonTitle}`}
-                    type="button"
-                    onClick={() => onSelectResult(suggestion.book, suggestion.chapter, suggestion.verse)}
-                    className="w-full rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-4 text-left hover:bg-[#c49a5c]/8 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-[#2c1810]">
-                          <BookOpen size={16} className="text-[#c49a5c] flex-shrink-0" />
-                          <span className="font-medium">{suggestion.referenceLabel}</span>
-                        </div>
-                        <p className="mt-1 text-sm text-[#2c1810]/60">
-                          {suggestion.sermonTitle
-                            ? `Matched from sermon insight: ${suggestion.sermonTitle}`
-                            : 'Matched from related sermon insight'}
-                        </p>
-                        {suggestion.supportingCount > 1 && (
-                          <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#c49a5c]/12 px-2.5 py-1 text-[11px] font-medium text-[#8c6430]">
-                            {suggestion.supportingCount} sermon matches
-                          </span>
-                        )}
-                        <p className="mt-2 text-sm leading-relaxed text-[#2c1810]/78">
-                          {trimPreview(suggestion.insight, 180)}
-                        </p>
-                      </div>
-                      <ArrowRight size={18} className="text-[#2c1810]/35 flex-shrink-0" />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45">
-              Loaded Text Matches
-            </p>
-
-            {query.trim().length < 3 ? (
-              <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
-                <p className="text-[#2c1810] font-medium">Search opened chapters here</p>
-                <p className="mt-2 text-sm text-[#2c1810]/60">
-                  As you read more chapters, their text becomes searchable here too.
-                </p>
-              </div>
-            ) : textResults.length === 0 ? (
-              <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
-                <p className="text-[#2c1810] font-medium">No loaded text matches found</p>
-                <p className="mt-2 text-sm text-[#2c1810]/60">
-                  Try one of the Scripture suggestions above, or jump straight to a reference.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {textResults.map((result) => (
-                  (() => {
-                    const verseHasSermons = getVerseNumbersForChapter(
-                      sermonReferenceIndex,
-                      result.book,
-                      result.chapter
-                    ).has(result.verse);
-
-                    return (
-                      <button
-                        key={`${result.book}-${result.chapter}-${result.verse}-${result.text.slice(0, 20)}`}
-                        type="button"
-                        onClick={() => onSelectResult(result.book, result.chapter, result.verse)}
-                        className="w-full rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-4 text-left hover:bg-[#c49a5c]/8 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 text-[#2c1810]">
-                              <BookOpen size={16} className="text-[#c49a5c] flex-shrink-0" />
-                              <span className="font-medium">{result.book} {result.chapter}:{result.verse}</span>
-                            </div>
-                            {verseHasSermons && (
-                              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#c49a5c]/12 px-2.5 py-1 text-[11px] font-medium text-[#8c6430]">
-                                Related sermons available
-                              </span>
-                            )}
-                            <p className="mt-2 text-sm leading-relaxed text-[#2c1810]/78">
-                              {trimPreview(result.text)}
-                            </p>
+              <>
+                <div className="space-y-3">
+                  {paginatedResults.map((result) => (
+                    <button
+                      key={getVerseKey(result.book, result.chapter, result.verse)}
+                      type="button"
+                      onClick={() => openVerseResult(result.book, result.chapter, result.verse)}
+                      className="w-full rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-4 text-left hover:bg-[#c49a5c]/8 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 text-[#2c1810]">
+                            <BookOpen size={16} className="text-[#c49a5c] flex-shrink-0" />
+                            <span className="font-medium">{result.referenceLabel}</span>
                           </div>
-                          <ArrowRight size={18} className="text-[#2c1810]/35 flex-shrink-0" />
+                          {result.hasRelatedSermons && (
+                            <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#c49a5c]/12 px-2.5 py-1 text-[11px] font-medium text-[#8c6430]">
+                              Related sermons available
+                            </span>
+                          )}
+                          <p className="mt-2 text-sm leading-relaxed text-[#2c1810]/78">
+                            {result.text ? trimPreview(result.text) : 'Loading Scripture text...'}
+                          </p>
                         </div>
-                      </button>
-                    );
-                  })()
-                ))}
-              </div>
+                        <ArrowRight size={18} className="text-[#2c1810]/35 flex-shrink-0" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.max(1, current - 1))}
+                      disabled={currentPage === 1}
+                      className="inline-flex items-center gap-1 text-sm text-[#2c1810] disabled:opacity-40"
+                    >
+                      <ChevronLeft size={16} />
+                      Previous
+                    </button>
+                    <p className="text-sm text-[#2c1810]/60">
+                      Page {currentPage} of {totalPages}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                      disabled={currentPage === totalPages}
+                      className="inline-flex items-center gap-1 text-sm text-[#2c1810] disabled:opacity-40"
+                    >
+                      Next
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
+
+      {previewVerse && (
+        <VersePanel
+          book={previewVerse.book}
+          chapter={previewVerse.chapter}
+          verse={previewVerse.verse}
+          onClose={() => setPreviewVerse(null)}
+        />
+      )}
     </div>
   );
 }

@@ -22,6 +22,7 @@ export type SermonSearchSuggestion = {
   insight: string;
   sermonTitle: string;
   supportingCount: number;
+  score?: number;
 };
 
 const emptyIndex = (): SermonReferenceIndex => ({
@@ -233,5 +234,5 @@ export const searchSermonVerseSuggestions = (
   return Array.from(suggestionsByReference.values())
     .sort((a, b) => b.score - a.score || b.supportingCount - a.supportingCount || a.order - b.order)
     .slice(0, limit)
-    .map(({ score: _score, order: _order, ...suggestion }) => suggestion);
+    .map(({ order: _order, ...suggestion }) => suggestion);
 };

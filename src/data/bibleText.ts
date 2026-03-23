@@ -17,6 +17,7 @@ export type BibleSearchResult = {
   chapter: number;
   verse: number;
   text: string;
+  score?: number;
 };
 
 const BIBLE_TRANSLATION_ID = 'BSB';
@@ -510,7 +511,7 @@ export function searchAvailableBibleText(query: string, limit: number = 30): Bib
   return results
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .slice(0, limit)
-    .map(({ score: _score, order: _order, ...result }) => result);
+    .map(({ order: _order, ...result }) => result);
 }
 
 const getFallbackBibleChapter = (book: string, chapter: number): BibleChapter | null => {
