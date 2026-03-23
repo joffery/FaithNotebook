@@ -1228,8 +1228,8 @@ export function VersePanel({
 
   return (
     <div className="fixed inset-0 bg-black/45 flex items-end justify-center z-[95] animate-fadeIn overscroll-contain">
-      <div className="bg-[#faf8f4] w-full max-w-2xl h-[100dvh] sm:h-auto sm:max-h-[80vh] rounded-none sm:rounded-t-2xl shadow-2xl flex flex-col animate-slideUp overscroll-contain">
-        <div className="flex items-center justify-between px-5 py-5 sm:p-6 border-b border-[#c49a5c]/20">
+      <div className="bg-[#faf8f4] w-full max-w-5xl h-[100dvh] sm:h-auto sm:max-h-[88vh] rounded-none sm:rounded-2xl shadow-2xl flex flex-col animate-slideUp overscroll-contain">
+        <div className="flex items-center justify-between px-5 py-5 sm:px-7 sm:py-6 border-b border-[#c49a5c]/20">
           <h3 className="text-xl font-serif text-[#2c1810]">{verseRef}</h3>
           <button
             onClick={onClose}
@@ -1257,7 +1257,7 @@ export function VersePanel({
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 pb-28 sm:pb-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:px-7 sm:py-6 pb-28 sm:pb-6">
           <div className="mb-6 rounded-xl border border-[#c49a5c]/18 bg-white/65 px-4 py-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
