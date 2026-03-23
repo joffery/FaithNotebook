@@ -452,20 +452,6 @@ export function BibleSearchModal({ onClose, onNavigateResult }: BibleSearchModal
               )}
             </div>
 
-            {query.trim().length >= 3 && (
-              <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-3">
-                <p className="text-sm text-[#2c1810]/70">
-                  {searchSource === 'supabase'
-                    ? 'Searching the full Bible from the Supabase verse index.'
-                    : indexStatus.isComplete
-                      ? 'Full Bible search is ready locally.'
-                      : indexStatus.isSyncing
-                        ? `Building local Bible search index... ${indexStatus.indexedChapters}/${indexStatus.totalChapters} chapters ready.`
-                        : `Preparing local Bible search... ${indexStatus.indexedChapters}/${indexStatus.totalChapters} chapters ready so far.`}
-                </p>
-              </div>
-            )}
-
             {query.trim().length < 3 ? (
               <div className="rounded-2xl border border-[#c49a5c]/20 bg-white/70 px-4 py-6 text-center">
                 <p className="text-[#2c1810] font-medium">Start with a reference or a few words</p>

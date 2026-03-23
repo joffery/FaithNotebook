@@ -1259,8 +1259,8 @@ export function VersePanel({
 
         <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:px-7 sm:py-6 pb-28 sm:pb-6">
           <div className="mb-6 rounded-xl border border-[#c49a5c]/18 bg-white/65 px-4 py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2c1810]/45 mb-2">
                   Scripture
                 </p>
@@ -1308,10 +1308,10 @@ export function VersePanel({
               <button
                 type="button"
                 onClick={handleCopyScripture}
-                className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg border border-[#c49a5c]/20 bg-white px-3 py-2 text-xs font-medium text-[#2c1810]/75 hover:bg-[#c49a5c]/10 hover:text-[#2c1810] transition-colors"
+                className="inline-flex w-fit flex-shrink-0 items-center gap-1 self-start rounded-lg border border-[#c49a5c]/20 bg-white px-3 py-2 text-xs font-medium text-[#2c1810]/75 hover:bg-[#c49a5c]/10 hover:text-[#2c1810] transition-colors sm:self-auto"
               >
                 {copiedVerse ? <Check size={14} /> : <Copy size={14} />}
-                <span>{copiedVerse ? 'Copied' : 'Copy Scripture'}</span>
+                <span>{copiedVerse ? 'Copied' : 'Copy'}</span>
               </button>
             </div>
           </div>
