@@ -86,7 +86,7 @@ function App() {
 
     const timeoutId = window.setTimeout(() => {
       setStatusBanner(null);
-    }, 2600);
+    }, statusBanner.includes('\n') ? 6000 : 2600);
 
     return () => window.clearTimeout(timeoutId);
   }, [statusBanner]);
@@ -168,7 +168,7 @@ function App() {
     <div className="min-h-screen bg-[#faf8f4]">
       {statusBanner && (
         <div className="fixed left-1/2 top-4 z-[120] -translate-x-1/2 px-4">
-          <div className="rounded-full border border-[#c49a5c]/25 bg-[#2c1810] px-4 py-2 text-sm text-white shadow-lg">
+          <div className="whitespace-pre-line rounded-3xl border border-[#c49a5c]/25 bg-[#2c1810] px-5 py-3 text-left text-sm text-white shadow-lg">
             {statusBanner}
           </div>
         </div>

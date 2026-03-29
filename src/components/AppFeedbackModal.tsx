@@ -103,9 +103,13 @@ export function AppFeedbackModal({
       setIsSubmitting(false);
       onClose();
       onSubmitted(
-        result.emailSent
-          ? 'Thanks for the feedback. We sent a confirmation email.'
-          : 'Thanks for the feedback. We received it successfully.'
+        [
+          'Thanks for sharing your feedback.',
+          '',
+          'Fengchun (Jeffrey) Qiao',
+          'Assistant Professor',
+          'University of South Florida',
+        ].join('\n')
       );
     } catch {
       setError('We could not submit your feedback right now.');
@@ -158,9 +162,9 @@ export function AppFeedbackModal({
 
           <div className="rounded-2xl border border-[#e7dfd5] bg-[#fbf7f1] px-4 py-4 text-sm text-[#1f1813]/72 sm:text-base">
             {needsEmailInput ? (
-              <p>Enter your email so we can confirm we received your feedback.</p>
+              <p>Enter your email so we can follow up if we need a little more context.</p>
             ) : (
-              <p>We will send a confirmation email to <span className="font-medium text-[#1f1813]">{normalizedSavedEmail}</span>.</p>
+              <p>We can follow up at <span className="font-medium text-[#1f1813]">{normalizedSavedEmail}</span> if we need a little more context.</p>
             )}
           </div>
 
@@ -223,7 +227,7 @@ export function AppFeedbackModal({
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className="ml-auto rounded-full bg-[#bdb8b3] px-6 py-2.5 text-base font-medium text-white transition-colors hover:bg-[#aba59f] disabled:cursor-not-allowed disabled:opacity-70 sm:px-7 sm:py-3 sm:text-xl"
+              className="ml-auto rounded-full bg-[#c49a5c] px-6 py-2.5 text-base font-medium text-white transition-colors hover:bg-[#b38a4d] disabled:cursor-not-allowed disabled:bg-[#bdb8b3] disabled:opacity-70 sm:px-7 sm:py-3 sm:text-xl"
             >
               {isSubmitting ? 'Sending...' : 'Submit Feedback'}
             </button>

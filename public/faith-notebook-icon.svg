@@ -3,19 +3,19 @@
   <rect x="72" y="72" width="880" height="880" rx="190" fill="#C49A5C"/>
   <text
     x="512"
-    y="438"
+    y="430"
     text-anchor="middle"
     font-family="Georgia, 'Times New Roman', serif"
-    font-size="118"
+    font-size="136"
     font-weight="700"
     fill="#FFFDF8"
   >Faith</text>
   <text
     x="512"
-    y="578"
+    y="594"
     text-anchor="middle"
     font-family="Georgia, 'Times New Roman', serif"
-    font-size="118"
+    font-size="136"
     font-weight="700"
     fill="#FFFDF8"
   >Notebook</text>
