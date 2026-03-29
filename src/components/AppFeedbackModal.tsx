@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Mail, MessageSquareQuote, Wrench, X } from 'lucide-react';
+import { MessageSquareQuote, Wrench, X } from 'lucide-react';
 
 const FEEDBACK_CATEGORIES = [
   { value: 'bug_report', label: 'Bug report' },
@@ -21,9 +21,6 @@ type AppFeedbackModalProps = {
   onSubmitted: (message: string) => void;
 };
 
-const isValidEmail = (value: string) =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-
 export function AppFeedbackModal({
   isOpen,
   currentBook,
@@ -37,10 +34,8 @@ export function AppFeedbackModal({
   onSubmitted,
 }: AppFeedbackModalProps) {
   const normalizedSavedEmail = savedEmail?.trim() || '';
-  const needsEmailInput = !normalizedSavedEmail;
   const [category, setCategory] = useState<(typeof FEEDBACK_CATEGORIES)[number]['value']>('bug_report');
   const [message, setMessage] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -48,24 +43,17 @@ export function AppFeedbackModal({
     if (!isOpen) return;
     setCategory('bug_report');
     setMessage('');
-    setContactEmail(normalizedSavedEmail);
     setError('');
     setIsSubmitting(false);
-  }, [isOpen, normalizedSavedEmail]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
     setError('');
 
-    const nextEmail = needsEmailInput ? contactEmail.trim() : normalizedSavedEmail;
     if (message.trim().length < 10) {
       setError('Please share a little more detail so we can understand the issue or request.');
-      return;
-    }
-
-    if (!isValidEmail(nextEmail)) {
-      setError('Please enter a valid email so we can confirm we received your feedback.');
       return;
     }
 
@@ -80,7 +68,7 @@ export function AppFeedbackModal({
         body: JSON.stringify({
           category,
           message: message.trim(),
-          contactEmail: nextEmail,
+          contactEmail: normalizedSavedEmail || null,
           userId,
           displayName,
           username,
@@ -151,29 +139,6 @@ export function AppFeedbackModal({
               );
             })}
           </div>
-
-          {needsEmailInput && (
-            <div>
-              <label htmlFor="app-feedback-email" className="mb-2 block text-sm font-medium text-[#1f1813]">
-                Email
-              </label>
-              <div className="relative">
-                <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#1f1813]/35" />
-                <input
-                  id="app-feedback-email"
-                  type="email"
-                  inputMode="email"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  value={contactEmail}
-                  onChange={(event) => setContactEmail(event.target.value)}
-                  placeholder="name@example.com"
-                  className="w-full rounded-2xl border border-[#dbd6cf] px-11 py-3 text-base text-[#1f1813] placeholder-[#1f1813]/42 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/45 sm:text-lg"
-                />
-              </div>
-            </div>
-          )}
 
           <div>
             <label htmlFor="app-feedback-message" className="mb-2 block text-sm font-medium text-[#1f1813]">

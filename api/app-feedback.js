@@ -117,6 +117,15 @@ const sendConfirmationEmail = async ({ to, category, displayName }) => {
   return { sent: true, error: null };
 };
 
+const updateConfirmationState = async (supabase, feedbackId, values) => {
+  if (!feedbackId) return;
+
+  await supabase
+    .from('app_feedback')
+    .update(values)
+    .eq('id', feedbackId);
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return json(res, 405, { error: 'Method not allowed.' });
@@ -129,7 +138,11 @@ export default async function handler(req, res) {
 
   const category = String(req.body?.category || '').trim();
   const message = String(req.body?.message || '').trim();
-  const contactEmail = String(req.body?.contactEmail || '').trim().toLowerCase();
+  const rawContactEmail = req.body?.contactEmail;
+  const contactEmail =
+    typeof rawContactEmail === 'string' && rawContactEmail.trim()
+      ? rawContactEmail.trim().toLowerCase()
+      : null;
   const userId = String(req.body?.userId || '').trim() || null;
   const displayName = String(req.body?.displayName || '').trim() || null;
   const username = String(req.body?.username || '').trim() || null;
@@ -147,7 +160,7 @@ export default async function handler(req, res) {
     return json(res, 400, { error: 'Please share a little more detail before submitting.' });
   }
 
-  if (!isValidEmail(contactEmail)) {
+  if (contactEmail && !isValidEmail(contactEmail)) {
     return json(res, 400, { error: 'Please enter a valid email address.' });
   }
 
@@ -174,21 +187,28 @@ export default async function handler(req, res) {
     }
 
     const feedbackId = data?.id;
+    if (!contactEmail) {
+      await updateConfirmationState(supabase, feedbackId, {
+        confirmation_email_sent_at: null,
+        confirmation_email_error: 'Anonymous submission: no contact email provided.',
+      });
+
+      return json(res, 200, {
+        ok: true,
+        emailSent: false,
+      });
+    }
+
     const emailResult = await sendConfirmationEmail({
       to: contactEmail,
       category,
       displayName,
     });
 
-    if (feedbackId) {
-      await supabase
-        .from('app_feedback')
-        .update({
-          confirmation_email_sent_at: emailResult.sent ? new Date().toISOString() : null,
-          confirmation_email_error: emailResult.sent ? null : emailResult.error,
-        })
-        .eq('id', feedbackId);
-    }
+    await updateConfirmationState(supabase, feedbackId, {
+      confirmation_email_sent_at: emailResult.sent ? new Date().toISOString() : null,
+      confirmation_email_error: emailResult.sent ? null : emailResult.error,
+    });
 
     return json(res, 200, {
       ok: true,

@@ -3,7 +3,7 @@
 
   1. Purpose
     - Store product feedback about bugs, feature requests, and general app improvements
-    - Preserve the best available contact email for follow-up and confirmation
+    - Preserve the best available contact email when available
 
   2. Safety
     - Additive only
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS app_feedback (
     category IN ('bug_report', 'feature_request', 'improvement', 'other')
   ),
   message text NOT NULL,
-  contact_email text NOT NULL,
+  contact_email text,
   user_id uuid,
   display_name text,
   username text,
