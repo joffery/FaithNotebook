@@ -102,15 +102,7 @@ export function AppFeedbackModal({
 
       setIsSubmitting(false);
       onClose();
-      onSubmitted(
-        [
-          'Thanks for sharing your feedback.',
-          '',
-          'Fengchun (Jeffrey) Qiao',
-          'Assistant Professor',
-          'University of South Florida',
-        ].join('\n')
-      );
+      onSubmitted('Thanks for sharing your feedback.');
     } catch {
       setError('We could not submit your feedback right now.');
       setIsSubmitting(false);
@@ -158,14 +150,6 @@ export function AppFeedbackModal({
                 </button>
               );
             })}
-          </div>
-
-          <div className="rounded-2xl border border-[#e7dfd5] bg-[#fbf7f1] px-4 py-4 text-sm text-[#1f1813]/72 sm:text-base">
-            {needsEmailInput ? (
-              <p>Enter your email so we can follow up if we need a little more context.</p>
-            ) : (
-              <p>We can follow up at <span className="font-medium text-[#1f1813]">{normalizedSavedEmail}</span> if we need a little more context.</p>
-            )}
           </div>
 
           {needsEmailInput && (
