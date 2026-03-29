@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { BibleChapter, getBibleChapter, ensureBibleChapter } from '../data/bibleText';
 import { parseVerseReference } from '../utils/verseParser';
 import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
+import { parseSermonVerseRefs } from '../utils/sermonReferences';
 import { buildTimestampedYouTubeUrl, formatVideoTimestamp } from '../utils/youtube';
 import {
   buildFeedbackKey,
@@ -61,6 +62,10 @@ type SermonChunkTimingRow = {
   start_seconds: number | null;
 };
 
+type SermonChunkContentRow = SermonChunkTimingRow & {
+  content: string;
+};
+
 type SermonFeedbackVote = 'up' | 'down';
 
 type SermonThumbDownDraft = {
@@ -111,23 +116,36 @@ const matchesVerseReference = (candidate: string, book: string, chapter: number,
   return parsed.some((item) => item.book === book && item.chapter === chapter && item.verse === verse);
 };
 
+const findMatchingReference = (
+  references: string[] | null | undefined,
+  book: string,
+  chapter: number,
+  verse: number
+) => {
+  const refs = Array.isArray(references) ? references : [];
+  const exact = refs.find((ref) => typeof ref === 'string' && matchesVerseReference(ref, book, chapter, verse));
+  if (exact) {
+    return { reference: exact, priority: 0 as const };
+  }
+
+  const chapterPrefix = `${book} ${chapter}:`;
+  const broader = refs.find(
+    (ref) => typeof ref === 'string' && normalizeVerseReference(ref).startsWith(chapterPrefix)
+  );
+  if (broader) {
+    return { reference: broader, priority: 1 as const };
+  }
+
+  return null;
+};
+
 const getMatchingChunkPriority = (
   verseReferences: string[] | null | undefined,
   book: string,
   chapter: number,
   verse: number
 ) => {
-  const refs = Array.isArray(verseReferences) ? verseReferences : [];
-  if (refs.some((ref) => typeof ref === 'string' && matchesVerseReference(ref, book, chapter, verse))) {
-    return 0;
-  }
-
-  const chapterPrefix = `${book} ${chapter}:`;
-  if (refs.some((ref) => typeof ref === 'string' && normalizeVerseReference(ref).startsWith(chapterPrefix))) {
-    return 1;
-  }
-
-  return null;
+  return findMatchingReference(verseReferences, book, chapter, verse)?.priority ?? null;
 };
 
 const buildMatchingStartSecondsMap = (
@@ -163,6 +181,88 @@ const buildMatchingStartSecondsMap = (
 
   return new Map(
     Array.from(bestBySermon.entries()).map(([sermonId, value]) => [sermonId, value.startSeconds])
+  );
+};
+
+const SERMON_CHUNK_BATCH_SIZE = 50;
+
+const fetchTimingChunksBySermonIds = async (sermonIds: string[]) => {
+  const uniqueIds = Array.from(new Set(sermonIds.filter(Boolean)));
+  const rows: SermonChunkTimingRow[] = [];
+
+  for (let index = 0; index < uniqueIds.length; index += SERMON_CHUNK_BATCH_SIZE) {
+    const batch = uniqueIds.slice(index, index + SERMON_CHUNK_BATCH_SIZE);
+    const { data, error } = await supabase
+      .from('sermon_chunks')
+      .select('sermon_id, verse_references, start_seconds')
+      .in('sermon_id', batch);
+
+    if (error) {
+      return { data: rows, error };
+    }
+
+    rows.push(...((data || []) as SermonChunkTimingRow[]));
+  }
+
+  return { data: rows, error: null };
+};
+
+const fetchContentChunksBySermonIds = async (sermonIds: string[]) => {
+  const uniqueIds = Array.from(new Set(sermonIds.filter(Boolean)));
+  const rows: SermonChunkContentRow[] = [];
+
+  for (let index = 0; index < uniqueIds.length; index += SERMON_CHUNK_BATCH_SIZE) {
+    const batch = uniqueIds.slice(index, index + SERMON_CHUNK_BATCH_SIZE);
+    const { data, error } = await supabase
+      .from('sermon_chunks')
+      .select('sermon_id, content, verse_references, start_seconds')
+      .in('sermon_id', batch);
+
+    if (error) {
+      return { data: rows, error };
+    }
+
+    rows.push(...((data || []) as SermonChunkContentRow[]));
+  }
+
+  return { data: rows, error: null };
+};
+
+const pickBestMatchingChunkBySermon = (
+  rows: SermonChunkContentRow[],
+  book: string,
+  chapter: number,
+  verse: number
+) => {
+  const bestBySermon = new Map<string, { chunk: SermonChunkContentRow; priority: number }>();
+
+  rows.forEach((row) => {
+    const priority = getMatchingChunkPriority(row.verse_references, book, chapter, verse);
+    if (priority === null) {
+      return;
+    }
+
+    const previous = bestBySermon.get(row.sermon_id);
+    const rowStartSeconds =
+      typeof row.start_seconds === 'number' && Number.isFinite(row.start_seconds)
+        ? row.start_seconds
+        : Number.MAX_SAFE_INTEGER;
+    const previousStartSeconds =
+      previous && typeof previous.chunk.start_seconds === 'number' && Number.isFinite(previous.chunk.start_seconds)
+        ? previous.chunk.start_seconds
+        : Number.MAX_SAFE_INTEGER;
+
+    if (
+      !previous ||
+      priority < previous.priority ||
+      (priority === previous.priority && rowStartSeconds < previousStartSeconds)
+    ) {
+      bestBySermon.set(row.sermon_id, { chunk: row, priority });
+    }
+  });
+
+  return new Map(
+    Array.from(bestBySermon.entries()).map(([sermonId, value]) => [sermonId, value.chunk])
   );
 };
 
@@ -344,7 +444,6 @@ export function VersePanel({
   const loadSermonChunks = async () => {
     if (!isSupabaseConfigured) return;
 
-    const chapterPrefix = `${book} ${chapter}:`;
     const baseFields = 'id, title, speaker, church, youtube_url, verse_insights, summary, verses, processed_at';
     const fieldsWithPublishedAt = `${baseFields}, youtube_published_at`;
     let { data, error } = await supabase
@@ -366,35 +465,31 @@ export function VersePanel({
     }
 
     const allRows = sortSermonsNewestFirst(data || []);
-    let startSecondsBySermon = new Map<string, number>();
-    const { data: timingRows, error: timingError } = await supabase
-      .from('sermon_chunks')
-      .select('sermon_id, verse_references, start_seconds')
-      .filter('verse_references::text', 'ilike', `%${book} ${chapter}%`)
-      .limit(250);
-
-    if (timingError) {
-      console.error('VersePanel sermon timing query error:', timingError);
-    } else {
-      startSecondsBySermon = buildMatchingStartSecondsMap(
-        (timingRows || []) as SermonChunkTimingRow[],
-        book,
-        chapter,
-        verse
-      );
-    }
-
     let rows = allRows.filter((row: any) => {
       const vis = parseVerseInsights(row.verse_insights);
-      const exact = vis.some((vi: { verse: string; insight: string }) =>
-        !!vi?.insight?.trim() && matchesVerseReference(vi.verse, book, chapter, verse)
-      );
-      const broader = vis.some((vi: { verse: string; insight: string }) =>
-        !!vi?.insight?.trim() && typeof vi.verse === 'string' && vi.verse.startsWith(chapterPrefix)
-      );
+      const insightRefs = vis
+        .filter((vi: { verse: string; insight: string }) => !!vi?.insight?.trim() && typeof vi.verse === 'string')
+        .map((vi: { verse: string }) => vi.verse);
+      const verseRefs = parseSermonVerseRefs(row.verses);
 
-      return exact || broader;
+      return (
+        getMatchingChunkPriority(insightRefs, book, chapter, verse) !== null ||
+        getMatchingChunkPriority(verseRefs, book, chapter, verse) !== null
+      );
     });
+
+    let startSecondsBySermon = new Map<string, number>();
+    const candidateSermonIds = rows.map((row: any) => row.id).filter((id: unknown): id is string => typeof id === 'string');
+
+    if (candidateSermonIds.length > 0) {
+      const { data: timingRows, error: timingError } = await fetchTimingChunksBySermonIds(candidateSermonIds);
+
+      if (timingError) {
+        console.error('VersePanel sermon timing query error:', timingError);
+      } else {
+        startSecondsBySermon = buildMatchingStartSecondsMap(timingRows, book, chapter, verse);
+      }
+    }
 
     const mapRowsToGroups = (rawRows: any[]): SermonGroup[] =>
       sortSermonsNewestFirst(rawRows)
@@ -404,12 +499,14 @@ export function VersePanel({
             !!vi?.insight?.trim() && matchesVerseReference(vi.verse, book, chapter, verse)
           );
           const chMatch = vis.find((vi: { verse: string; insight: string }) =>
-            !!vi?.insight?.trim() && vi.verse?.startsWith(chapterPrefix)
+            !!vi?.insight?.trim() && findMatchingReference([vi.verse], book, chapter, verse)?.priority === 1
           );
+          const verseMatch = findMatchingReference(parseSermonVerseRefs(row.verses), book, chapter, verse);
           const insightText = exact?.insight || chMatch?.insight || (row._chunkContent as string | undefined) || null;
           const summary = trimToSentences(row.summary || '', 3);
-          const matchType: SermonGroup['matchType'] = exact ? 'exact' : 'broader';
-          const matchedReference = exact?.verse || chMatch?.verse || null;
+          const matchType: SermonGroup['matchType'] =
+            exact || verseMatch?.priority === 0 ? 'exact' : 'broader';
+          const matchedReference = exact?.verse || chMatch?.verse || verseMatch?.reference || null;
           const matchedStartSeconds =
             typeof row._startSeconds === 'number'
               ? row._startSeconds
@@ -438,47 +535,36 @@ export function VersePanel({
 
     // Step 4: sermon_chunks fallback — runs when steps 1-3 found rows but none had
     // verse_insights or summary (pipeline Gemini analysis not yet run).
-    // Uses two separate queries to avoid embedded join FK dependency.
-    if (groups.length === 0) {
-      const { data: chunksData, error: chunksError } = await supabase
-        .from('sermon_chunks')
-        .select('sermon_id, content, verse_references, start_seconds')
-        .filter('verse_references::text', 'ilike', `%${book} ${chapter}%`)
-        .limit(8);
+    if (groups.length === 0 && candidateSermonIds.length > 0) {
+      const { data: chunksData, error: chunksError } = await fetchContentChunksBySermonIds(candidateSermonIds);
 
-      if (!chunksError && chunksData && chunksData.length > 0) {
-        // Deduplicate by sermon_id, pick the first chunk per sermon
-        const seenIds = new Set<string>();
-        const bestChunks: Record<string, any> = {};
-        for (const c of chunksData) {
-          if (!seenIds.has(c.sermon_id)) {
-            seenIds.add(c.sermon_id);
-            bestChunks[c.sermon_id] = c;
-          }
-        }
-        const sermonIds = Object.keys(bestChunks);
-
-        // Fetch sermon metadata separately (no embedded join needed)
-        const { data: sermonsData } = await supabase
-          .from('sermons')
-          .select('id, title, speaker, church, youtube_url, summary, processed_at, youtube_published_at')
-          .in('id', sermonIds);
-
-        const sermonById: Record<string, any> = {};
-        for (const s of (sermonsData || [])) {
-          sermonById[s.id] = s;
-        }
-
-        const chunkRows = sermonIds.map((sid) => ({
-          ...(sermonById[sid] || {}),
-          id: sid,
-          _chunkContent: bestChunks[sid].content,
-          _startSeconds: bestChunks[sid].start_seconds,
-        }));
-
-        groups = mapRowsToGroups(chunkRows);
-      } else if (chunksError) {
+      if (chunksError) {
         console.error('VersePanel sermon_chunks fallback error:', chunksError);
+      } else if (chunksData.length > 0) {
+        const bestChunks = pickBestMatchingChunkBySermon(chunksData, book, chapter, verse);
+
+        if (bestChunks.size > 0) {
+          const sermonById = new Map(
+            rows
+              .filter((row: any) => typeof row.id === 'string')
+              .map((row: any) => [row.id, row])
+          );
+
+          const chunkRows = Array.from(bestChunks.entries())
+            .map(([sermonId, chunk]) => {
+              const sermon = sermonById.get(sermonId);
+              if (!sermon) return null;
+
+              return {
+                ...sermon,
+                _chunkContent: chunk.content,
+                _startSeconds: chunk.start_seconds,
+              };
+            })
+            .filter((row): row is Record<string, any> => row !== null);
+
+          groups = mapRowsToGroups(chunkRows);
+        }
       }
     }
 
