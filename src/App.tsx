@@ -10,6 +10,7 @@ import { MobileTabBar } from './components/MobileTabBar';
 import { MyNotesPanel } from './components/MyNotesPanel';
 import { BibleSearchModal } from './components/BibleSearchModal';
 import { InstallPrompt } from './components/InstallPrompt';
+import { AppFeedbackModal } from './components/AppFeedbackModal';
 import { useAuth } from './context/AuthContext';
 import { isSupabaseConfigured } from './lib/supabase';
 import { normalizeBibleBookName } from './utils/verseParser';
@@ -45,6 +46,7 @@ function App() {
   const [showMyNotes, setShowMyNotes] = useState(false);
   const [showBibleSearch, setShowBibleSearch] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAppFeedback, setShowAppFeedback] = useState(false);
   const [selectedVerseFromApp, setSelectedVerseFromApp] = useState<number | null>(null);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
 
@@ -104,7 +106,8 @@ function App() {
     showProfileSettings ||
     showMyNotes ||
     showBibleSearch ||
-    showAuthModal;
+    showAuthModal ||
+    showAppFeedback;
 
   useEffect(() => {
     if (typeof window === 'undefined' || !hasBlockingOverlay) return;
@@ -179,6 +182,7 @@ function App() {
         onOpenSermons={() => setShowSermons(true)}
         onOpenProfile={user ? () => setShowProfileSettings(true) : () => setShowAuthModal(true)}
         onOpenSearch={() => setShowBibleSearch(true)}
+        onOpenFeedback={() => setShowAppFeedback(true)}
         onOpenSignIn={() => setShowAuthModal(true)}
         isAuthenticated={!!user}
       />
@@ -281,6 +285,19 @@ function App() {
       <div className="fixed bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#faf8f4] to-transparent pointer-events-none hidden sm:block"></div>
 
       <InstallPrompt />
+
+      <AppFeedbackModal
+        isOpen={showAppFeedback}
+        currentBook={currentBook}
+        currentChapter={currentChapter}
+        savedEmail={profile?.recovery_email || null}
+        userId={user?.id || null}
+        displayName={profile?.display_name || null}
+        username={profile?.username || null}
+        churchAffiliation={profile?.church_affiliation || null}
+        onClose={() => setShowAppFeedback(false)}
+        onSubmitted={(message) => setStatusBanner(message)}
+      />
 
       {showAuthModal && (
         <AuthForm

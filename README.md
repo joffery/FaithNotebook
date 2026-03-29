@@ -29,9 +29,14 @@ For production on Vercel, set this server-only variable in Vercel Project Settin
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key
+SUPABASE_SERVICE_KEY=your_supabase_service_role_key
+RESEND_API_KEY=your_resend_api_key
+FEEDBACK_FROM_EMAIL=Faith Notebook <feedback@your-domain.com>
+FEEDBACK_REPLY_TO_EMAIL=optional_reply_to_address
 ```
 
 AI requests are proxied through `api/gemini-chat.js`, so the Gemini key is never exposed to browsers.
+App feedback confirmation emails are sent through `api/app-feedback.js` when the Resend variables are configured.
 
 ### Run Supabase Migrations
 
