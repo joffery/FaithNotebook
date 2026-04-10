@@ -7,6 +7,10 @@ import { RecoverAccountModal } from './RecoverAccountModal';
 const toFriendlyAuthError = (message?: string) => {
   const text = message?.toLowerCase() || '';
 
+  if (message && text.startsWith('please ')) {
+    return message;
+  }
+
   if (text.includes('invalid login credentials')) {
     return 'That username or password did not match. Please try again.';
   }

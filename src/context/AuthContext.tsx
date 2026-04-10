@@ -15,6 +15,8 @@ type ProfileDetailsInput = {
 };
 
 const LEGACY_EMAIL_SUFFIX = '@faith.local';
+const AUTH_OPERATION_TIMEOUT_MS = 8000;
+const USERNAME_ALLOWED_PATTERN = /^[a-zA-Z0-9._-]+$/;
 
 const isValidRecoveryEmail = (value: string | null | undefined) =>
   typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -35,6 +37,48 @@ const getRememberedUsername = () => {
 const normalizeChurchAffiliation = (value?: string | null) => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+};
+
+const validateUsernameForRegistration = (value: string) => {
+  const trimmed = value.trim();
+
+  if (trimmed.length < 3) {
+    return 'Please use at least 3 characters for your username.';
+  }
+
+  if (trimmed.includes('@')) {
+    return 'Please choose a username, not an email address.';
+  }
+
+  if (!USERNAME_ALLOWED_PATTERN.test(trimmed)) {
+    return 'Please use only letters, numbers, periods, underscores, or hyphens in your username.';
+  }
+
+  return null;
+};
+
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
+  let timeoutId: number | null = null;
+  return new Promise<T>((resolve, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} timed out`));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+        }
+        resolve(value);
+      },
+      (error) => {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+        }
+        reject(error);
+      }
+    );
+  });
 };
 
 const isMissingChurchAffiliationColumnError = (error: unknown) => {
@@ -108,6 +152,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return data as ProfileRow | null;
+  };
+
+  const ensureProfileWithTimeout = async (
+    authUser: User,
+    usernameHint?: string | null,
+    churchAffiliationHint?: string | null
+  ) => {
+    try {
+      return await withTimeout(
+        ensureProfile(authUser, usernameHint, churchAffiliationHint),
+        AUTH_OPERATION_TIMEOUT_MS,
+        'Loading profile'
+      );
+    } catch (error) {
+      console.error('Falling back after profile load issue:', error);
+      return null;
+    }
   };
 
   const ensureProfile = async (
@@ -201,18 +262,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        const sessionResult = await withTimeout<Awaited<ReturnType<typeof supabase.auth.getSession>>>(
+          supabase.auth.getSession(),
+          AUTH_OPERATION_TIMEOUT_MS,
+          'Restoring session'
+        );
+        const session = sessionResult.data.session;
 
-      if (session?.user) {
-        setUser(session.user);
-        setProfileLoading(true);
-        setProfile(await ensureProfile(session.user));
-        setProfileLoading(false);
-      } else {
+        if (session?.user) {
+          setUser(session.user);
+          setProfileLoading(true);
+          setProfile(await ensureProfileWithTimeout(session.user));
+          setProfileLoading(false);
+        } else {
+          setProfile(null);
+          setProfileLoading(false);
+        }
+      } catch (error) {
+        console.error('Auth initialization failed:', error);
         setProfile(null);
         setProfileLoading(false);
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     initAuth();
@@ -222,7 +296,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         if (session?.user) {
           setProfileLoading(true);
-          setProfile(await ensureProfile(session.user));
+          setProfile(await ensureProfileWithTimeout(session.user));
           setProfileLoading(false);
         } else {
           setProfile(null);
@@ -253,6 +327,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async ({ username, password, churchAffiliation }: SignUpInput) => {
     const cleanUsername = username.trim();
+    const usernameValidationError = validateUsernameForRegistration(cleanUsername);
+    if (usernameValidationError) {
+      return { error: new Error(usernameValidationError) };
+    }
+
     const normalizedChurchAffiliation = normalizeChurchAffiliation(churchAffiliation);
     const { data, error } = await supabase.auth.signUp({
       email: toEmail(cleanUsername),

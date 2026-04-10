@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Navigation } from './components/Navigation';
 import { BibleReader } from './components/BibleReader';
 import { AuthForm } from './components/AuthForm';
@@ -16,6 +16,7 @@ import { isSupabaseConfigured } from './lib/supabase';
 import { normalizeBibleBookName } from './utils/verseParser';
 
 const LAST_READING_POSITION_KEY = 'faith-notebook-last-reading-position';
+const OVERLAY_HISTORY_KEY = 'faithNotebookOverlay';
 
 function App() {
   const { user, profile, loading, profileLoading, needsAccountSetup } = useAuth();
@@ -109,6 +110,83 @@ function App() {
     showAuthModal ||
     showAppFeedback;
 
+  const currentOverlayKey =
+    showAppFeedback ? 'app-feedback'
+    : showAuthModal ? 'auth'
+    : showBibleSearch ? 'bible-search'
+    : showMyNotes ? 'my-notes'
+    : showProfileSettings ? 'profile'
+    : showAccountSetupPrompt ? 'account-setup'
+    : showSermons ? 'sermons'
+    : showAIChat ? 'ai-chat'
+    : null;
+
+  const closeTopOverlay = useCallback(() => {
+    if (showAppFeedback) {
+      setShowAppFeedback(false);
+      return true;
+    }
+
+    if (showAuthModal) {
+      setShowAuthModal(false);
+      return true;
+    }
+
+    if (showBibleSearch) {
+      setShowBibleSearch(false);
+      return true;
+    }
+
+    if (showMyNotes) {
+      setShowMyNotes(false);
+      return true;
+    }
+
+    if (showProfileSettings) {
+      setShowProfileSettings(false);
+      return true;
+    }
+
+    if (showAccountSetupPrompt) {
+      setShowAccountSetupPrompt(false);
+      return true;
+    }
+
+    if (showSermons) {
+      setShowSermons(false);
+      return true;
+    }
+
+    if (showAIChat) {
+      setShowAIChat(false);
+      return true;
+    }
+
+    return false;
+  }, [
+    showAIChat,
+    showSermons,
+    showAccountSetupPrompt,
+    showProfileSettings,
+    showMyNotes,
+    showBibleSearch,
+    showAuthModal,
+    showAppFeedback,
+  ]);
+
+  const closeOverlayWithHistory = useCallback((fallbackClose: () => void) => {
+    if (
+      typeof window !== 'undefined' &&
+      currentOverlayKey &&
+      window.history.state?.[OVERLAY_HISTORY_KEY] === currentOverlayKey
+    ) {
+      window.history.back();
+      return;
+    }
+
+    fallbackClose();
+  }, [currentOverlayKey]);
+
   useEffect(() => {
     if (typeof window === 'undefined' || !hasBlockingOverlay) return;
 
@@ -142,6 +220,30 @@ function App() {
       window.scrollTo(0, scrollY);
     };
   }, [hasBlockingOverlay]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !currentOverlayKey) return;
+    if (window.history.state?.[OVERLAY_HISTORY_KEY] === currentOverlayKey) return;
+
+    window.history.pushState(
+      {
+        ...(window.history.state || {}),
+        [OVERLAY_HISTORY_KEY]: currentOverlayKey,
+      },
+      ''
+    );
+  }, [currentOverlayKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePopState = () => {
+      closeTopOverlay();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [closeTopOverlay]);
 
   if (loading || (user && profileLoading && !profile)) {
     return (
@@ -198,23 +300,23 @@ function App() {
 
       {showAIChat && (
         <AIChatTab
-          onClose={() => setShowAIChat(false)}
+          onClose={() => closeOverlayWithHistory(() => setShowAIChat(false))}
         />
       )}
 
       {showSermons && (
         <SermonsPanel
-          onClose={() => setShowSermons(false)}
+          onClose={() => closeOverlayWithHistory(() => setShowSermons(false))}
         />
       )}
 
       {showAccountSetupPrompt && (
-        <AccountSetupPrompt onClose={() => setShowAccountSetupPrompt(false)} />
+        <AccountSetupPrompt onClose={() => closeOverlayWithHistory(() => setShowAccountSetupPrompt(false))} />
       )}
 
       {showProfileSettings && (
         <ProfileSettingsModal
-          onClose={() => setShowProfileSettings(false)}
+          onClose={() => closeOverlayWithHistory(() => setShowProfileSettings(false))}
           onSignedOut={() => {
             setShowProfileSettings(false);
             setShowMyNotes(false);
@@ -229,7 +331,7 @@ function App() {
 
       {showMyNotes && (
         <MyNotesPanel
-          onClose={() => setShowMyNotes(false)}
+          onClose={() => closeOverlayWithHistory(() => setShowMyNotes(false))}
           onOpenNote={(book, chapter, verse) => {
             setCurrentBook(book);
             setCurrentChapter(chapter);
@@ -241,7 +343,7 @@ function App() {
 
       {showBibleSearch && (
         <BibleSearchModal
-          onClose={() => setShowBibleSearch(false)}
+          onClose={() => closeOverlayWithHistory(() => setShowBibleSearch(false))}
           onNavigateResult={(book, chapter) => {
             setCurrentBook(normalizeBibleBookName(book));
             setCurrentChapter(chapter);
@@ -295,13 +397,13 @@ function App() {
         displayName={profile?.display_name || null}
         username={profile?.username || null}
         churchAffiliation={profile?.church_affiliation || null}
-        onClose={() => setShowAppFeedback(false)}
+        onClose={() => closeOverlayWithHistory(() => setShowAppFeedback(false))}
         onSubmitted={(message) => setStatusBanner(message)}
       />
 
       {showAuthModal && (
         <AuthForm
-          onClose={() => setShowAuthModal(false)}
+          onClose={() => closeOverlayWithHistory(() => setShowAuthModal(false))}
           onAuthenticated={(message) => setStatusBanner(message)}
         />
       )}

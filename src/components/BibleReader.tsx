@@ -3,6 +3,8 @@ import { getBibleChapter, ensureBibleChapter, getBibleTranslationLabel, BibleCha
 import { VersePanel } from './VersePanel';
 import { getSermonReferenceIndex, getVerseNumbersForChapter } from '../utils/sermonReferences';
 
+const VERSE_HISTORY_KEY = 'faithNotebookVerse';
+
 type BibleReaderProps = {
   book: string;
   chapter: number;
@@ -49,6 +51,47 @@ export function BibleReader({ book, chapter, selectedVerseFromApp = null, onSele
     setSelectedVerse(selectedVerseFromApp);
     onSelectedVerseHandled?.();
   }, [selectedVerseFromApp, onSelectedVerseHandled]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || selectedVerse === null) return;
+
+    const historyValue = `${book}:${chapter}:${selectedVerse}`;
+    if (window.history.state?.[VERSE_HISTORY_KEY] === historyValue) return;
+
+    window.history.pushState(
+      {
+        ...(window.history.state || {}),
+        [VERSE_HISTORY_KEY]: historyValue,
+      },
+      ''
+    );
+  }, [book, chapter, selectedVerse]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePopState = () => {
+      if (selectedVerse !== null) {
+        setSelectedVerse(null);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [selectedVerse]);
+
+  const closeSelectedVerse = () => {
+    if (
+      typeof window !== 'undefined' &&
+      selectedVerse !== null &&
+      window.history.state?.[VERSE_HISTORY_KEY]
+    ) {
+      window.history.back();
+      return;
+    }
+
+    setSelectedVerse(null);
+  };
 
   if (!chapterData) {
     return (
@@ -102,7 +145,7 @@ export function BibleReader({ book, chapter, selectedVerseFromApp = null, onSele
           book={book}
           chapter={chapter}
           verse={selectedVerse}
-          onClose={() => setSelectedVerse(null)}
+          onClose={closeSelectedVerse}
         />
       )}
     </>
