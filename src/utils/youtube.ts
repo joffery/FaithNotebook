@@ -41,7 +41,7 @@ export const buildTimestampedYouTubeUrl = (url?: string | null, startSeconds?: n
     return trimmedUrl;
   }
 
-  return `https://www.youtube.com/watch?v=${videoId}&t=${safeSeconds}s`;
+  return `https://www.youtube.com/watch?v=${videoId}&t=${safeSeconds}s&start=${safeSeconds}`;
 };
 
 export const formatVideoTimestamp = (seconds?: number | null) => {

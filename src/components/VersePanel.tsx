@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { BibleChapter, getBibleChapter, ensureBibleChapter } from '../data/bibleText';
 import { parseVerseReference } from '../utils/verseParser';
+import { createSearchMatcher } from '../utils/searchText';
 import { formatSermonDate, getPrimarySermonDate, sortSermonsNewestFirst } from '../utils/sermonSorting';
 import { buildTimestampedYouTubeUrl, formatVideoTimestamp } from '../utils/youtube';
 import {
@@ -47,6 +48,7 @@ type SermonGroup = {
   church: string;
   youtubeUrl: string;
   startSeconds?: number | null;
+  startSecondsSource?: 'reference' | 'fallback' | null;
   summary: string;
   relevantText: string | null;
   isSummaryFallback: boolean;
@@ -59,6 +61,7 @@ type SermonChunkTimingRow = {
   sermon_id: string;
   verse_references: string[] | null;
   start_seconds: number | null;
+  content?: string | null;
 };
 
 type SermonFeedbackVote = 'up' | 'down';
@@ -179,6 +182,50 @@ const buildMatchingStartSecondsMap = (
   );
 };
 
+const buildInsightFallbackStartSecondsMap = (
+  rows: SermonChunkTimingRow[],
+  sermonInsightsById: Map<string, string>
+) => {
+  const chunksBySermon = new Map<string, SermonChunkTimingRow[]>();
+
+  rows.forEach((row) => {
+    if (typeof row.start_seconds !== 'number' || !Number.isFinite(row.start_seconds) || !row.content?.trim()) {
+      return;
+    }
+
+    const existing = chunksBySermon.get(row.sermon_id) || [];
+    existing.push(row);
+    chunksBySermon.set(row.sermon_id, existing);
+  });
+
+  const bestBySermon = new Map<string, number>();
+
+  sermonInsightsById.forEach((insightText, sermonId) => {
+    const chunks = chunksBySermon.get(sermonId) || [];
+    if (!insightText.trim() || chunks.length === 0) {
+      return;
+    }
+
+    const matcher = createSearchMatcher(insightText);
+    let bestScore = 0;
+    let bestStartSeconds: number | null = null;
+
+    chunks.forEach((chunk) => {
+      const score = matcher.scoreText(chunk.content || '');
+      if (score > bestScore) {
+        bestScore = score;
+        bestStartSeconds = chunk.start_seconds ?? null;
+      }
+    });
+
+    if (bestStartSeconds !== null && bestScore >= 18) {
+      bestBySermon.set(sermonId, bestStartSeconds);
+    }
+  });
+
+  return bestBySermon;
+};
+
 const SERMON_CHUNK_BATCH_SIZE = 50;
 
 const fetchTimingChunksBySermonIds = async (sermonIds: string[]) => {
@@ -189,7 +236,7 @@ const fetchTimingChunksBySermonIds = async (sermonIds: string[]) => {
     const batch = uniqueIds.slice(index, index + SERMON_CHUNK_BATCH_SIZE);
     const { data, error } = await supabase
       .from('sermon_chunks')
-      .select('sermon_id, verse_references, start_seconds')
+      .select('sermon_id, verse_references, start_seconds, content')
       .in('sermon_id', batch);
 
     if (error) {
@@ -411,7 +458,9 @@ export function VersePanel({
     });
 
     let startSecondsBySermon = new Map<string, number>();
+    let fallbackStartSecondsBySermon = new Map<string, number>();
     const candidateSermonIds = rows.map((row: any) => row.id).filter((id: unknown): id is string => typeof id === 'string');
+    const insightTextBySermonId = new Map<string, string>();
 
     if (candidateSermonIds.length > 0) {
       const { data: timingRows, error: timingError } = await fetchTimingChunksBySermonIds(candidateSermonIds);
@@ -420,6 +469,20 @@ export function VersePanel({
         console.error('VersePanel sermon timing query error:', timingError);
       } else {
         startSecondsBySermon = buildMatchingStartSecondsMap(timingRows, book, chapter, verse);
+        rows.forEach((row: any) => {
+          const vis = parseVerseInsights(row.verse_insights);
+          const exact = vis.find((vi: { verse: string; insight: string }) =>
+            !!vi?.insight?.trim() && matchesVerseReference(vi.verse, book, chapter, verse)
+          );
+          const broader = vis.find((vi: { verse: string; insight: string }) =>
+            !!vi?.insight?.trim() && findMatchingReference([vi.verse], book, chapter, verse)?.priority === 1
+          );
+          const insightText = exact?.insight || broader?.insight || '';
+          if (insightText.trim()) {
+            insightTextBySermonId.set(row.id, insightText);
+          }
+        });
+        fallbackStartSecondsBySermon = buildInsightFallbackStartSecondsMap(timingRows, insightTextBySermonId);
       }
     }
 
@@ -437,10 +500,19 @@ export function VersePanel({
           const summary = trimToSentences(row.summary || '', 3);
           const matchType: SermonGroup['matchType'] = exact ? 'exact' : 'broader';
           const matchedReference = exact?.verse || chMatch?.verse || null;
-          const matchedStartSeconds =
+          const referenceStartSeconds =
             typeof row._startSeconds === 'number'
               ? row._startSeconds
               : startSecondsBySermon.get(row.id);
+          const matchedStartSeconds = typeof referenceStartSeconds === 'number'
+            ? referenceStartSeconds
+            : fallbackStartSecondsBySermon.get(row.id);
+          const startSecondsSource: SermonGroup['startSecondsSource'] =
+            typeof referenceStartSeconds === 'number'
+              ? 'reference'
+              : typeof matchedStartSeconds === 'number'
+                ? 'fallback'
+                : null;
 
           if (!insightText) return null;
 
@@ -451,6 +523,7 @@ export function VersePanel({
             church: row.church || '',
             youtubeUrl: buildTimestampedYouTubeUrl(row.youtube_url || '', matchedStartSeconds) || row.youtube_url || '',
             startSeconds: typeof matchedStartSeconds === 'number' ? matchedStartSeconds : null,
+            startSecondsSource,
             summary,
             relevantText: insightText,
             isSummaryFallback: !insightText,
@@ -1536,7 +1609,11 @@ export function VersePanel({
                 rel="noopener noreferrer"
                 className="inline-block text-xs text-[#c49a5c] hover:underline"
               >
-                {watchTimestamp ? `▶ Watch on YouTube at ${watchTimestamp}` : '▶ Watch on YouTube'}
+                {watchTimestamp
+                  ? group.startSecondsSource === 'fallback'
+                    ? `▶ Watch on YouTube around ${watchTimestamp}`
+                    : `▶ Watch on YouTube at ${watchTimestamp}`
+                  : '▶ Watch on YouTube'}
               </a>
             )}
 
