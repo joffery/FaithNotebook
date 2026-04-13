@@ -11,7 +11,7 @@ type MobileTabBarProps = {
 const tabs = [
   { id: 'read', label: 'Read', icon: BookOpen },
   { id: 'sermons', label: 'Sermons', icon: PlayCircle },
-  { id: 'ask', label: 'Ask', icon: MessageCircle },
+  { id: 'ask', label: 'Q&A', icon: MessageCircle },
   { id: 'profile', label: 'Profile', icon: User },
 ] as const;
 

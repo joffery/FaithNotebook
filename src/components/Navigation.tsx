@@ -103,7 +103,7 @@ export function Navigation({
             className="flex flex-shrink-0 items-center gap-2 px-4 py-2 bg-[#c49a5c] text-white rounded-lg hover:bg-[#b38a4d] transition-colors"
           >
             <MessageCircle size={20} />
-            <span className="font-medium">AI Chat</span>
+            <span className="font-medium">Bible Q&A</span>
           </button>
 
           <button

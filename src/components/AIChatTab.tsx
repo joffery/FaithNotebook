@@ -53,8 +53,8 @@ const AI_CHAT_THUMB_DOWN_REASONS: FeedbackReasonOption[] = [
 
 const SUGGESTED_QUESTIONS = [
   'What does the Bible say about baptism?',
-  'What is repentance?',
-  'What does it mean to be a disciple?',
+  'Why did Moses spend 40 years in Midian?',
+  'What scriptures help with anxiety?',
 ];
 
 const AI_CHAT_SESSION_KEY = 'faith-notebook-ai-chat-session';
@@ -514,7 +514,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center sm:p-4 overscroll-contain">
       <div className="bg-gradient-to-b from-[#f5e6d3] to-[#e8d4ba] w-full h-[100dvh] sm:h-auto sm:max-w-4xl sm:max-h-[90vh] flex flex-col sm:rounded-lg shadow-2xl">
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#c49a5c]/20">
-          <h2 className="text-2xl font-serif text-[#2c1810]">AI Bible Study Assistant</h2>
+          <h2 className="text-2xl font-serif text-[#2c1810]">Bible Q&A</h2>
           <button
             onClick={onClose}
             className="p-2 hover:bg-[#c49a5c]/10 rounded-lg transition-colors"
@@ -527,10 +527,10 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
           {messages.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-[#2c1810]/60 mb-2 text-lg">
-                Ask a Bible question and get a clear starting point
+                Ask Scripture questions and explore sermon insights
               </p>
               <p className="text-[#2c1810]/45 text-sm mb-5 max-w-md mx-auto">
-                Start with one of these common questions, or ask your own. The assistant answers from Scripture and sermon material.
+                Get a Bible-based answer that can draw from Scripture and relevant sermons.
               </p>
               <div className="max-w-lg mx-auto flex flex-wrap justify-center gap-2">
                 {SUGGESTED_QUESTIONS.map((question) => (
@@ -676,7 +676,7 @@ export function AIChatTab({ onClose }: AIChatTabProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about the Bible, sermons, or discipleship..."
+            placeholder="Ask a Bible or sermon question..."
             disabled={loading}
             className="flex-1 min-w-0 px-4 py-3 bg-white/70 border border-[#c49a5c]/20 rounded-xl text-[#2c1810] placeholder-[#2c1810]/40 focus:outline-none focus:ring-2 focus:ring-[#c49a5c]/50 disabled:opacity-50"
           />
